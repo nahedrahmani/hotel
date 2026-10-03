@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: client-service
+  config:
+    import: optional:configserver:http://localhost:8888
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:9999/realms/hotel}

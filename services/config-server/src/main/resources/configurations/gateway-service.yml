@@ -1,0 +1,59 @@
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # Some services also add @CrossOrigin headers; browsers reject duplicates
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+      routes:
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/users/**
+
+        - id: reservation-service
+          uri: lb://reservation-service
+          predicates:
+            - Path=/api/reservations/**, /api/transports/**
+
+        - id: chambre-service
+          uri: lb://chambre-service
+          predicates:
+            - Path=/api/chambres/**, /api/chambre/**, /api/reclamations/**, /api/chats/**
+
+        - id: chambre-service-ws
+          uri: lb:ws://chambre-service
+          predicates:
+            - Path=/ws-chat/**
+
+        - id: client-service
+          uri: lb://client-service
+          predicates:
+            - Path=/api/clients/**, /api/demandes/**, /api/checkinout/**
+
+        - id: stock-service
+          uri: lb://stock-service
+          predicates:
+            - Path=/api/stock/**
+
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/payment/**
+
+        - id: rh-service
+          uri: lb://rh-service
+          predicates:
+            - Path=/api/rh/**
+    discovery:
+      enabled: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:9999/realms/hotel
+
+server:
+  port: 8080

@@ -1,0 +1,16 @@
+package tn.esprit.rhservice.enums;
+
+public enum Poste {
+    RECEPTIONNISTE,
+    FEMME_DE_CHAMBRE,
+    CHEF_CUISINE,
+    CUISINIER,
+    SERVEUR,
+    TECHNICIEN_MAINTENANCE,
+    AGENT_SECURITE,
+    MANAGER,
+    DIRECTEUR,
+    RESPONSABLE_RH,
+    COMPTABLE,
+    CONCIERGE
+}

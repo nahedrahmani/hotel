@@ -1,0 +1,8 @@
+/* Navbar scroll behavior */
+.navbar-scroll {
+  transition: transform 0.3s ease-in-out;
+}
+
+.navbar-scroll.hidden {
+  transform: translateY(-100%);
+}

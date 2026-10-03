@@ -1,0 +1,12 @@
+
+spring:
+  application:
+    name: chambre-service
+  config:
+    import: optional:configserver:http://localhost:8888
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:9999/realms/hotel
+          jwk-set-uri: http://localhost:9999/realms/hotel/protocol/openid-connect/certs

@@ -1,0 +1,15 @@
+server:
+  port: 8090
+spring:
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+  data:
+    mongodb:
+      username: ${MONGODB_USER:hireme}
+      password: ${MONGODB_PASSWORD:hireme}
+      host: ${MONGODB_HOST:localhost}
+      port: ${MONGODB_PORT:27017}
+      database: ${MONGODB_DATABASE:user}
+      authentication-database: ${MONGODB_AUTH_DB:admin}

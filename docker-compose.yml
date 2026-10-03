@@ -1,0 +1,289 @@
+name: hotel
+
+# Start order: infrastructure first → then business services → then frontend
+# Usage: docker compose up --build
+
+# ─── Shared settings ─────────────────────────────────────────────────────────
+# The services' own application.yml files point at localhost (for running from
+# the IDE). Inside Docker, localhost is the container itself, so these
+# variables redirect them to the other containers by service name.
+
+x-spring-env: &spring-env
+  SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+  # JSON keeps the case of "defaultZone" (a plain env var would lowercase it).
+  # preferIpAddress makes services register their container IP, not "localhost".
+  SPRING_APPLICATION_JSON: '{"eureka":{"client":{"serviceUrl":{"defaultZone":"http://discovery-service:8889/eureka/"}},"instance":{"preferIpAddress":true}}}'
+  # Tokens are issued to the browser as http://localhost:9999 (KC_HOSTNAME_URL),
+  # so that is the issuer to check; signing keys are fetched over the Docker network.
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUERURI: http://localhost:9999/realms/hotel
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://keycloak:8080/realms/hotel/protocol/openid-connect/certs
+  MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+
+x-cloudinary-env: &cloudinary-env
+  CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-ddbunaglw}
+  CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-915436136837845}
+  CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-FMD_RxeZiE1NMUCeMWz5XcVizDw}
+
+x-spring-depends: &spring-depends
+  config-server:
+    condition: service_healthy
+  discovery-service:
+    condition: service_healthy
+
+services:
+
+  # ─── Infrastructure ───────────────────────────────────────────────────────
+
+  mongodb:
+    image: mongo:6
+    ports:
+      - "27018:27017"   # host 27017 is used by the eidos project
+    volumes:
+      - mongo:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=tourism
+      - MONGO_INITDB_ROOT_PASSWORD=tourism
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hotel_net
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    ports:
+      - "9999:8080"
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_RELATIVE_PATH: /
+      # Always issue tokens as localhost:9999, even when a container calls
+      # keycloak:8080, so the browser and the services agree on the issuer.
+      KC_HOSTNAME_URL: http://localhost:9999
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+    # Imports keycloak/hotel-realm.json on first start (skipped if the realm exists)
+    command: start-dev --import-realm
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+      - ./keycloak:/opt/keycloak/data/import:ro
+    networks:
+      - hotel_net
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+    networks:
+      - hotel_net
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5673:5672"     # host 5672 is used by the eidos project
+      - "15673:15672"   # host 15672 is used by the eidos project
+    environment:
+      RABBITMQ_DEFAULT_USER: hotel
+      RABBITMQ_DEFAULT_PASS: hotel
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s   # first start after a reboot can take over a minute
+    networks:
+      - hotel_net
+
+  # ─── Spring Cloud backbone (must start before business services) ──────────
+
+  config-server:
+    build: ./services/config-server
+    ports:
+      - "8888:8888"
+    networks:
+      - hotel_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  discovery-service:
+    build: ./services/discovery-service
+    ports:
+      - "8889:8889"
+    depends_on:
+      config-server:
+        condition: service_healthy
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+    networks:
+      - hotel_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8889/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api-gateway:
+    build: ./services/api-gateway
+    ports:
+      - "8180:8080"     # host 8080 is taken by Jenkins (WSL)
+    depends_on:
+      <<: *spring-depends
+      keycloak:
+        condition: service_started
+    environment:
+      <<: *spring-env
+    networks:
+      - hotel_net
+
+  # ─── Business services ────────────────────────────────────────────────────
+
+  chambre-service:
+    build: ./services/chambre-service
+    ports:
+      - "8091:8081"     # host 8081 is used by the eidos project
+    depends_on: *spring-depends
+    volumes:
+      - chambre-data:/data
+    environment:
+      <<: [*spring-env, *cloudinary-env]
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/data/chambredb
+    networks:
+      - hotel_net
+
+  stock-service:
+    build: ./services/stock-service
+    ports:
+      - "8082:8082"
+    depends_on: *spring-depends
+    volumes:
+      - stock-data:/data
+    environment:
+      <<: *spring-env
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/data/stockdb
+    networks:
+      - hotel_net
+
+  reservation-service:
+    build: ./services/reservation-service
+    ports:
+      - "8083:8083"
+    depends_on:
+      <<: *spring-depends
+      chambre-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - reservation-data:/data
+    environment:
+      <<: *spring-env
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/data/reservationdb
+      # Service account used for calls to chambre-service and payment-service
+      SERVICE_AUTH_TOKEN_URI: http://keycloak:8080/realms/hotel/protocol/openid-connect/token
+      SERVICE_AUTH_CLIENT_SECRET: ${RESERVATION_SERVICE_SECRET:-7cc8fef7d6519c8c6c91f95f1b3a08c14016fbc28d4f568f}
+      RABBITMQ_HOST: rabbitmq
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+    networks:
+      - hotel_net
+
+  user-service:
+    build: ./services/user-service
+    ports:
+      - "3001:3000"     # host 3000 is used by the eidos project
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    environment:
+      MONGO_URI: mongodb://tourism:tourism@mongodb:27017/hotel-users?authSource=admin
+      KEYCLOAK_URL: http://keycloak:8080/realms/hotel
+      EUREKA_HOST: discovery-service
+      EUREKA_PORT: "8889"
+      # Name the gateway uses to reach this container on the Docker network
+      HOST: user-service
+    networks:
+      - hotel_net
+
+  client-service:
+    build: ./services/client-service
+    ports:
+      - "8084:8084"
+    depends_on:
+      <<: *spring-depends
+      keycloak:
+        condition: service_started
+    volumes:
+      - client-data:/data
+    environment:
+      <<: [*spring-env, *cloudinary-env]
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/data/clientdb
+    networks:
+      - hotel_net
+
+  payment-service:
+    build: ./services/payment-service
+    ports:
+      - "8087:8087"
+    depends_on: *spring-depends
+    volumes:
+      - payment-data:/data
+    environment:
+      <<: *spring-env
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/data/paymentdb
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_REPLACE_ME}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_REPLACE_ME}
+    networks:
+      - hotel_net
+
+  rh-service:
+    build: ./services/rh-service
+    ports:
+      - "8086:8086"
+    depends_on: *spring-depends
+    volumes:
+      - rh-data:/data
+    environment:
+      <<: *spring-env
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/data/rhdb
+    networks:
+      - hotel_net
+
+  # ─── Frontend ─────────────────────────────────────────────────────────────
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - hotel_net
+
+networks:
+  hotel_net:
+    name: hotel_net
+    driver: bridge
+
+volumes:
+  mongo:
+  keycloak-data:
+  chambre-data:
+  stock-data:
+  reservation-data:
+  client-data:
+  payment-data:
+  rh-data:

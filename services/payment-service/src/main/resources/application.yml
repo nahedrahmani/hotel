@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: payment-service
+  config:
+    import: optional:configserver:http://localhost:8888
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:9999/realms/hotel}
+  datasource:
+    url: jdbc:h2:file:./data/paymentdb
+    driver-class-name: org.h2.Driver
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+  h2:
+    console:
+      enabled: false
+
+server:
+  port: 8087
+
+stripe:
+  secret-key: ${STRIPE_SECRET_KEY:sk_test_REPLACE_ME}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_REPLACE_ME}
+  currency: eur
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info"
+
+eureka:
+  instance:
+    hostname: localhost
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8889/eureka

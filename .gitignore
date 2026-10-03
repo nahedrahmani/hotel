@@ -1,0 +1,29 @@
+# Dependencies & build output
+node_modules/
+target/
+dist/
+dist-ssr/
+build/
+*.class
+*.jar
+!**/.mvn/wrapper/maven-wrapper.jar
+
+# Environment / secrets (keep the .example files)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Local tool settings
+.claude/
