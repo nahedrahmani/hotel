@@ -70,6 +70,8 @@ services:
     volumes:
       - keycloak-data:/opt/keycloak/data
       - ./keycloak:/opt/keycloak/data/import:ro
+      # Hotel-branded login, sign-up and password pages
+      - ./keycloak/themes/royal-tulip:/opt/keycloak/themes/royal-tulip:ro
     networks:
       - hotel_net
 
@@ -77,6 +79,15 @@ services:
     image: openzipkin/zipkin:latest
     ports:
       - "9411:9411"
+    networks:
+      - hotel_net
+
+  # Catches every e-mail sent in development (account verification, ...): http://localhost:8026
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8026:8025"     # web inbox (8025 is used by the eidos project)
+      - "1026:1025"     # SMTP (1025 is used by the eidos project)
     networks:
       - hotel_net
 
@@ -155,6 +166,8 @@ services:
     environment:
       <<: [*spring-env, *cloudinary-env]
       SPRING_DATASOURCE_URL: jdbc:h2:file:/data/chambredb
+      # Also set here so the service starts even if the config server is not ready yet
+      SPRING_DATASOURCE_USERNAME: sa
     networks:
       - hotel_net
 
@@ -211,6 +224,10 @@ services:
     environment:
       MONGO_URI: mongodb://tourism:tourism@mongodb:27017/hotel-users?authSource=admin
       KEYCLOAK_URL: http://keycloak:8080/realms/hotel
+      # Service account used to update a user's own name/e-mail in Keycloak
+      KEYCLOAK_ADMIN_CLIENT_ID: user-service-admin
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${USER_SERVICE_ADMIN_SECRET:-b58186451f65d18332e0ab890f1573fa70a3e81403b60413}
+      APP_URL: http://localhost:5173/dashboard/profil
       EUREKA_HOST: discovery-service
       EUREKA_PORT: "8889"
       # Name the gateway uses to reach this container on the Docker network
@@ -231,6 +248,8 @@ services:
     environment:
       <<: [*spring-env, *cloudinary-env]
       SPRING_DATASOURCE_URL: jdbc:h2:file:/data/clientdb
+      # Also set here so the service starts even if the config server is not ready yet
+      SPRING_DATASOURCE_USERNAME: sa
     networks:
       - hotel_net
 
@@ -244,8 +263,10 @@ services:
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:h2:file:/data/paymentdb
+      # Card payments stay disabled until a real key is set in .env (see .env.example)
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_REPLACE_ME}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_REPLACE_ME}
+      STRIPE_CURRENCY: ${STRIPE_CURRENCY:-tnd}
     networks:
       - hotel_net
 

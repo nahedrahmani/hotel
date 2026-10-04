@@ -1,5 +1,6 @@
 {
   "realm": "hotel",
+  "displayName": "Royal Tulip Korbous Bay",
   "enabled": true,
   "registrationAllowed": true,
   "loginWithEmailAllowed": true,
@@ -73,6 +74,16 @@
       "enabled": true,
       "publicClient": false,
       "secret": "7cc8fef7d6519c8c6c91f95f1b3a08c14016fbc28d4f568f",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    },
+    {
+      "clientId": "user-service-admin",
+      "name": "User service (account updates)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "b58186451f65d18332e0ab890f1573fa70a3e81403b60413",
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false
@@ -162,6 +173,36 @@
         "default-roles-hotel",
         "MANAGER"
       ]
+    },
+    {
+      "username": "service-account-user-service-admin",
+      "enabled": true,
+      "serviceAccountClientId": "user-service-admin",
+      "realmRoles": [
+        "default-roles-hotel"
+      ],
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users"
+        ]
+      }
     }
-  ]
+  ],
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "fr",
+    "en"
+  ],
+  "defaultLocale": "fr",
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "noreply@royaltulip.tn",
+    "fromDisplayName": "Royal Tulip Korbous Bay",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
+  "loginTheme": "royal-tulip"
 }

@@ -1,0 +1,127 @@
+/* Royal Tulip Korbous Bay — login, sign-up and password pages.
+   Same look as the hotel site: hero photo, white card, dark buttons, system font. */
+
+html.login-pf,
+.login-pf body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Separate properties: a colour inside a multi-layer shorthand invalidates the whole rule */
+  background-color: #1f1f1f;
+  background-image: linear-gradient(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.6)), url(../img/background.jpg);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+.login-pf-page {
+  padding-top: 6vh;
+}
+
+/* The logo in the card replaces the realm name above it */
+.login-pf-page .login-pf-page-header {
+  margin-bottom: 0;
+}
+#kc-header-wrapper {
+  font-size: 0;
+  padding: 0;
+}
+
+.login-pf-page .card-pf {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 1.75rem 2.25rem 2rem;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.3);
+}
+.login-pf-page .card-pf::before {
+  content: "";
+  display: block;
+  height: 96px;
+  margin: 0 auto 0.5rem;
+  background: url(../img/logo.png) center / contain no-repeat;
+}
+
+.login-pf-page .login-pf-header {
+  margin-bottom: 1.25rem;
+}
+#kc-page-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #212529;
+  text-align: center;
+}
+
+/* Form fields like the app's Bootstrap inputs */
+.pf-c-form__label-text,
+.login-pf-page label {
+  font-weight: 600;
+  color: #212529;
+}
+.pf-c-form-control,
+.login-pf-page .form-control {
+  height: auto;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  box-shadow: none;
+}
+.pf-c-form-control:focus,
+.login-pf-page .form-control:focus {
+  border-color: #212529;
+  box-shadow: 0 0 0 0.2rem rgba(33, 37, 41, 0.15);
+  outline: 0;
+}
+
+/* Primary action: the app's btn-dark */
+.pf-c-button.pf-m-primary,
+.login-pf-page .btn-primary {
+  background: #212529;
+  border: 1px solid #212529;
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+}
+.pf-c-button.pf-m-primary:hover,
+.pf-c-button.pf-m-primary:focus,
+.login-pf-page .btn-primary:hover {
+  background: #000;
+  border-color: #000;
+}
+.pf-c-button.pf-m-primary::after {
+  border: 0;
+}
+.login-pf-page .btn-default,
+.pf-c-button.pf-m-secondary {
+  border-radius: 6px;
+}
+
+.login-pf-page a,
+.login-pf-page a:hover {
+  color: #212529;
+}
+.login-pf-page a:hover {
+  text-decoration: underline;
+}
+
+/* "Nouvel utilisateur ?" strip: Keycloak's negative margins match its own padding, not this card's */
+#kc-info {
+  margin: 1.5rem -2.25rem -2rem;
+}
+#kc-info-wrapper {
+  background-color: #f8f9fa;
+  border-radius: 0 0 12px 12px;
+  padding: 0.9rem 2.25rem;
+  text-align: center;
+}
+
+/* Language switch sits on the photo, keep it readable */
+#kc-locale-dropdown button,
+#kc-locale-dropdown a {
+  color: #212529;
+}
+
+.alert-error,
+.pf-c-alert.pf-m-danger {
+  border-radius: 6px;
+}
