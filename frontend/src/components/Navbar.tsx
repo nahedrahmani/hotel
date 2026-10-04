@@ -95,7 +95,7 @@ const Navbar: React.FC = () => {
                                 data-bs-toggle="dropdown"
                                 aria-expanded="false"
                             >
-                                Staff
+                                Gestion
                             </button>
                             <ul className="dropdown-menu shadow-sm border-0">
                                 <li>
@@ -159,10 +159,9 @@ const Navbar: React.FC = () => {
                                             </Link>
                                         </li>
                                         <li>
-                                            {/* Profile is managed in Keycloak's account console */}
-                                            <button className="dropdown-item d-flex align-items-center" onClick={() => keycloak?.accountManagement()}>
+                                            <Link to="/dashboard/profil" className="dropdown-item d-flex align-items-center">
                                                 <i className="bi bi-person-lines-fill me-2"></i> Mon profil
-                                            </button>
+                                            </Link>
                                         </li>
                                         <li>
                                             <button className="dropdown-item d-flex align-items-center text-danger" onClick={() => keycloak?.logout()}>

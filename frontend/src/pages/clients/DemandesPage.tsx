@@ -13,6 +13,7 @@ import {
 } from '../../services/clientService';
 import keycloak from '../../config/keycloak';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
+import { apiError } from '../../utils/api';
 
 const COLUMNS: DemandeStatut[] = ['OUVERTE', 'EN_COURS', 'TRAITEE', 'FERMEE'];
 
@@ -67,8 +68,8 @@ const DemandesPage: React.FC = () => {
       await clientService.createDemande(form);
       setShowForm(false);
       fetchDemandes();
-    } catch (e: any) {
-      alert(e?.response?.data ?? 'Erreur lors de la création.');
+    } catch (e) {
+      setError(apiError(e, 'Erreur lors de la création.'));
     } finally { setSaving(false); }
   };
 
@@ -79,7 +80,7 @@ const DemandesPage: React.FC = () => {
       await clientService.updateStatut(d.id!, next);
       fetchDemandes();
     } catch {
-      alert('Erreur lors de la mise à jour du statut.');
+      setError('Erreur lors de la mise à jour du statut.');
     }
   };
 
@@ -88,7 +89,7 @@ const DemandesPage: React.FC = () => {
       await clientService.updateStatut(d.id!, 'FERMEE');
       fetchDemandes();
     } catch {
-      alert('Erreur lors de la clôture.');
+      setError('Erreur lors de la clôture.');
     }
   };
 
@@ -100,7 +101,7 @@ const DemandesPage: React.FC = () => {
       setAssignTo('');
       fetchDemandes();
     } catch {
-      alert('Erreur lors de l\'assignation.');
+      setError('Erreur lors de l\'assignation.');
     }
   };
 

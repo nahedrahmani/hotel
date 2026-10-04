@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { reservationService, type Reservation, STATUS_LABELS, STATUS_COLORS, TYPE_LABELS } from './services/reservationService';
+import { formatDT, formatStay } from './utils/format';
 
 const MONTH_NAMES = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
@@ -179,12 +180,12 @@ export const CalendarPage = () => {
                       </span>
                     </div>
                     <div className="text-muted small">Chambre {r.roomId}</div>
-                    <div className="text-muted small">{r.checkInDate} → {r.checkOutDate}</div>
+                    <div className="text-muted small">{formatStay(r.checkInDate, r.checkOutDate)}</div>
                     {r.reservationType && (
                       <div className="text-muted small">Type: {TYPE_LABELS[r.reservationType]}</div>
                     )}
                     {r.totalPrice && (
-                      <div className="text-muted small">Prix: {r.totalPrice} DT</div>
+                      <div className="text-muted small">Prix : {formatDT(r.totalPrice)}</div>
                     )}
                   </div>
                 ))}

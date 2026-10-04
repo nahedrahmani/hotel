@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import keycloak from './keycloak';
-import KeycloakType from 'keycloak-js';
+import KeycloakType, { type KeycloakTokenParsed } from 'keycloak-js';
 import Lottie from "lottie-react";
 import loadingAnimation from './../../public/Material loading.json';
 
@@ -11,7 +11,7 @@ interface KeycloakContextType {
     keycloak: KeycloakType;
     authenticated: boolean;
     initialized: boolean;
-    userInfo?: any;
+    userInfo?: KeycloakTokenParsed | null;
 }
 
 const KeycloakContext = createContext<KeycloakContextType>({
@@ -33,7 +33,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
         () => localStorage.getItem('kc-authenticated') === 'true'
     );
     const [initialized, setInitialized] = useState(false);
-    const [userInfo, setUserInfo] = useState<any>(null);
+    const [userInfo, setUserInfo] = useState<KeycloakTokenParsed | null>(null);
 
     const syncUser = async () => {
         if (!keycloak.tokenParsed) return;

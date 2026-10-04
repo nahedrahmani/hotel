@@ -1,11 +1,7 @@
-import axios from 'axios';
-import keycloak from '../config/keycloak';
+import { http } from './http';
 
 const API = `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/reservations`;
 
-const auth = () => ({
-  headers: { Authorization: `Bearer ${keycloak.token}` },
-});
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -24,6 +20,10 @@ export type ChambreInfo = {
   wifi?: boolean;
   climatisation?: boolean;
   balcon?: boolean;
+  // Cancellation policy of the room (sent by reservation-service with each booking)
+  cancellationPolicyHours?: number;
+  cancellationFeePercent?: number;
+  nonRefundableHours?: number;
 };
 
 export type Reservation = {
@@ -69,6 +69,21 @@ export type Facture = {
   clientNom: string;
 };
 
+/**
+ * Penalty the guest would pay if they cancelled now. Same rule as
+ * ReservationService.calculateCancellationPenalty in reservation-service — keep both in sync.
+ */
+export function cancellationPenalty(r: Reservation, now = new Date()): number {
+  if (r.totalPrice == null || !r.checkInDate) return 0;
+  const freeBefore = r.chambre?.cancellationPolicyHours ?? 48;
+  const feePercent = r.chambre?.cancellationFeePercent ?? 50;
+  const nonRefundable = r.chambre?.nonRefundableHours ?? 24;
+  const hoursUntil = Math.floor((new Date(`${r.checkInDate}T14:00:00`).getTime() - now.getTime()) / 3600000);
+  if (hoursUntil >= freeBefore) return 0;
+  if (hoursUntil <= nonRefundable) return r.totalPrice;
+  return Math.round(r.totalPrice * feePercent) / 100;
+}
+
 // ── Labels ─────────────────────────────────────────────────────────────────────
 
 export const TYPE_LABELS: Record<ReservationType, string> = {
@@ -100,39 +115,37 @@ export const STATUS_COLORS: Record<ReservationStatus, string> = {
 
 export const reservationService = {
   // CRUD
-  getAll:    ()                          => axios.get<Reservation[]>(API, auth()),
-  getById:   (id: number)                => axios.get<Reservation>(`${API}/${id}`, auth()),
-  create:    (data: Reservation)         => axios.post<Reservation>(API, data, auth()),
-  update:    (id: number, d: Reservation)=> axios.put<Reservation>(`${API}/${id}`, d, auth()),
-  delete:    (id: number)                => axios.delete(`${API}/${id}`, auth()),
+  getAll:    ()                          => http.get<Reservation[]>(API),
+  getById:   (id: number)                => http.get<Reservation>(`${API}/${id}`),
+  create:    (data: Reservation)         => http.post<Reservation>(API, data),
+  update:    (id: number, d: Reservation)=> http.put<Reservation>(`${API}/${id}`, d),
+  delete:    (id: number)                => http.delete(`${API}/${id}`),
 
   // Status actions
   confirm: (id: number) =>
-    axios.patch<Reservation>(`${API}/${id}/confirm`, null, auth()),
+    http.patch<Reservation>(`${API}/${id}/confirm`, null),
   cancel: (id: number, reason?: string) =>
-    axios.patch<Reservation>(`${API}/${id}/cancel`, reason ? { reason } : {}, auth()),
+    http.patch<Reservation>(`${API}/${id}/cancel`, reason ? { reason } : {}),
 
   // Queries
   getByCustomer:   (customerId: number) =>
-    axios.get<Reservation[]>(`${API}/customer/${customerId}`, auth()),
+    http.get<Reservation[]>(`${API}/customer/${customerId}`),
   getByKeycloak:   (keycloakId: string) =>
-    axios.get<Reservation[]>(`${API}/keycloak/${keycloakId}`, auth()),
+    http.get<Reservation[]>(`${API}/keycloak/${keycloakId}`),
   getByRoom:       (roomId: number) =>
-    axios.get<Reservation[]>(`${API}/room/${roomId}`, auth()),
+    http.get<Reservation[]>(`${API}/room/${roomId}`),
   getPrice: (roomId: number, checkInDate: string, checkOutDate: string) =>
-    axios.get<{ total: number; nights: { date: string; price: number }[]; currency: string }>(
-      `${API}/price?roomId=${roomId}&checkInDate=${checkInDate}&checkOutDate=${checkOutDate}`, auth()),
+    http.get<{ total: number; nights: { date: string; price: number }[]; currency: string }>(
+      `${API}/price?roomId=${roomId}&checkInDate=${checkInDate}&checkOutDate=${checkOutDate}`),
   getToday:        ()                   =>
-    axios.get<{ arrivals: Reservation[]; departures: Reservation[] }>(`${API}/today`, auth()),
+    http.get<{ arrivals: Reservation[]; departures: Reservation[] }>(`${API}/today`),
   checkAvailability: (roomId: number, checkInDate: string, checkOutDate: string) =>
-    axios.get<{ available: boolean }>(
-      `${API}/availability?roomId=${roomId}&checkInDate=${checkInDate}&checkOutDate=${checkOutDate}`,
-      auth()
-    ),
+    http.get<{ available: boolean }>(
+      `${API}/availability?roomId=${roomId}&checkInDate=${checkInDate}&checkOutDate=${checkOutDate}`),
   search: (startDate: string, endDate: string) =>
-    axios.get<Reservation[]>(`${API}/search?checkInDate=${startDate}&checkOutDate=${endDate}`, auth()),
+    http.get<Reservation[]>(`${API}/search?checkInDate=${startDate}&checkOutDate=${endDate}`),
 
   // Stats & invoices
-  getStats:   ()           => axios.get<ReservationStats>(`${API}/stats`, auth()),
-  getFactures:(id: number) => axios.get<Facture[]>(`${API}/${id}/factures`, auth()),
+  getStats:   ()           => http.get<ReservationStats>(`${API}/stats`),
+  getFactures:(id: number) => http.get<Facture[]>(`${API}/${id}/factures`),
 };

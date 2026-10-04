@@ -5,6 +5,9 @@ import {
   PRIORITE_COLORS, STATUT_TACHE_COLORS,
 } from '../../services/rhService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
+import { apiError } from '../../utils/api';
+import { useConfirm } from '../../components/useConfirm';
+import { formatDate } from '../../utils/format';
 
 const STATUTS: StatutTache[] = ['A_FAIRE', 'EN_COURS', 'TERMINE', 'ANNULE'];
 const PRIORITES: PrioriteTache[] = ['BASSE', 'NORMALE', 'HAUTE', 'URGENTE'];
@@ -19,6 +22,7 @@ const PRIORITE_LABELS: Record<PrioriteTache, string> = {
 const EMPTY_TACHE: Tache = { titre: '', description: '', priorite: 'NORMALE', statut: 'A_FAIRE' };
 
 export default function TachesPage() {
+  const [confirm, confirmDialog] = useConfirm();
   // Hide actions the backend refuses for this role (ADMIN/MANAGER only)
   const canManage = hasAnyRole(MANAGEMENT_ROLES);
   const [taches, setTaches] = useState<Tache[]>([]);
@@ -66,19 +70,19 @@ export default function TachesPage() {
       setShowModal(false);
       load();
     } catch (e: unknown) {
-      setFormError((e as any)?.response?.data?.message ?? 'Erreur.');
+      setFormError(apiError(e, 'Erreur.'));
     } finally { setSaving(false); }
   };
 
   const handleStatut = async (id: number, statut: StatutTache) => {
     try { await rhService.changerStatutTache(id, statut); load(); }
-    catch { alert('Erreur lors du changement de statut.'); }
+    catch { setError('Erreur lors du changement de statut.'); }
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Supprimer cette tâche ?')) return;
+    if (!(await confirm('Supprimer cette tâche ?', { danger: true }))) return;
     try { await rhService.deleteTache(id); load(); }
-    catch { alert('Erreur lors de la suppression.'); }
+    catch { setError('Erreur lors de la suppression.'); }
   };
 
   const KanbanColumn = ({ statut }: { statut: StatutTache }) => {
@@ -99,7 +103,7 @@ export default function TachesPage() {
                 </div>
                 {t.description && <div className="text-muted small mb-2" style={{ fontSize: '0.75rem' }}>{t.description.substring(0, 60)}{t.description.length > 60 ? '…' : ''}</div>}
                 {t.assigneANom && <div className="small text-muted"><i className="bi bi-person me-1" />{t.assigneANom}</div>}
-                {t.dateEcheance && <div className="small text-muted"><i className="bi bi-calendar me-1" />{t.dateEcheance}</div>}
+                {t.dateEcheance && <div className="small text-muted">Échéance : {formatDate(t.dateEcheance)}</div>}
                 <div className="d-flex gap-1 mt-2 flex-wrap" onClick={e => e.stopPropagation()}>
                   {STATUTS.filter(s => s !== t.statut).map(s => (
                     <button key={s} className={`btn btn-sm py-0 px-1 btn-outline-${STATUT_TACHE_COLORS[s]}`} style={{ fontSize: '0.7rem' }}
@@ -117,6 +121,7 @@ export default function TachesPage() {
 
   return (
     <div className="container-fluid p-4">
+      {confirmDialog}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="fw-bold mb-0">Tâches</h2>
         {canManage && (
@@ -130,11 +135,11 @@ export default function TachesPage() {
 
       <div className="card border-0 shadow-sm mb-4">
         <div className="card-body d-flex gap-3 flex-wrap">
-          <select className="form-select w-auto" value={filterStatut} onChange={e => setFilterStatut(e.target.value as any)}>
+          <select className="form-select w-auto" value={filterStatut} onChange={e => setFilterStatut(e.target.value as typeof filterStatut)}>
             <option value="">Tous les statuts</option>
             {STATUTS.map(s => <option key={s} value={s}>{STATUT_LABELS[s]}</option>)}
           </select>
-          <select className="form-select w-auto" value={filterPriorite} onChange={e => setFilterPriorite(e.target.value as any)}>
+          <select className="form-select w-auto" value={filterPriorite} onChange={e => setFilterPriorite(e.target.value as typeof filterPriorite)}>
             <option value="">Toutes les priorités</option>
             {PRIORITES.map(p => <option key={p} value={p}>{PRIORITE_LABELS[p]}</option>)}
           </select>

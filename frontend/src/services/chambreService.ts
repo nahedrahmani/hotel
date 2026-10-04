@@ -1,11 +1,7 @@
-import axios from 'axios';
-import keycloak from '../config/keycloak';
+import { http } from './http';
 
 const API_URL = `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/chambres`;
 
-const auth = () => ({
-  headers: { Authorization: `Bearer ${keycloak.token}` },
-});
 
 export type Chambre = {
   id?: number;
@@ -41,6 +37,14 @@ export const ROOM_TYPE_LABELS: Record<string, string> = {
   SINGLE: 'Simple', DOUBLE: 'Double', TWIN: 'Twin', SUITE: 'Suite', FAMILY: 'Familiale',
 };
 
+// Illustration per room type (public/rooms, credits in public/rooms/CREDITS.txt)
+const TYPE_PHOTOS: Record<string, string> = {
+  SINGLE: '/rooms/single.jpg', DOUBLE: '/rooms/double.jpg', TWIN: '/rooms/twin.jpg', FAMILY: '/rooms/family.jpg', SUITE: '/rooms/suite.jpg',
+};
+
+/** The room's own uploaded photo when there is one, otherwise the photo of its type. */
+export const roomPhoto = (r: { photo?: string; type: string }) => r.photo || TYPE_PHOTOS[r.type] || TYPE_PHOTOS.DOUBLE;
+
 // Room statuses written by the reservation and housekeeping workflows
 export const STATUT_LABELS: Record<string, string> = {
   disponible: 'Disponible', réservée: 'Réservée', occupée: 'Occupée', à_nettoyer: 'À nettoyer', hors_service: 'Hors service',
@@ -51,46 +55,47 @@ export const STATUT_COLORS: Record<string, string> = {
 
 export const chambreService = {
   getAllChambres: (hotelId?: number) =>
-    axios.get<Chambre[]>(`${API_URL}${hotelId ? `?hotelId=${hotelId}` : ''}`),
+    http.get<Chambre[]>(`${API_URL}${hotelId ? `?hotelId=${hotelId}` : ''}`),
 
   getChambresANettoyer: (hotelId?: number) =>
-    axios.get<Chambre[]>(`${API_URL}/a-nettoyer${hotelId ? `?hotelId=${hotelId}` : ''}`, auth()),
+    http.get<Chambre[]>(`${API_URL}/a-nettoyer${hotelId ? `?hotelId=${hotelId}` : ''}`),
 
   marquerPropre: (id: number) =>
-    axios.patch<Chambre>(`${API_URL}/${id}/marquer-propre`, null, auth()),
+    http.patch<Chambre>(`${API_URL}/${id}/marquer-propre`, null),
 
-  getChambreById: (id: number) => axios.get<Chambre>(`${API_URL}/${id}`),
+  getChambreById: (id: number) => http.get<Chambre>(`${API_URL}/${id}`),
 
   createChambre: (chambre: Chambre, photo?: File) => {
     const formData = new FormData();
     formData.append('chambre', new Blob([JSON.stringify(chambre)], { type: 'application/json' }));
     if (photo) formData.append('photo', photo);
-    return axios.post<Chambre>(`${API_URL}`, formData, auth());
+    return http.post<Chambre>(`${API_URL}`, formData);
   },
 
   updateChambre: (id: number, chambre: Chambre, photo?: File) => {
     const formData = new FormData();
     formData.append('chambre', new Blob([JSON.stringify(chambre)], { type: 'application/json' }));
     if (photo) formData.append('photo', photo);
-    return axios.put<Chambre>(`${API_URL}/${id}`, formData, auth());
+    return http.put<Chambre>(`${API_URL}/${id}`, formData);
   },
 
-  deleteChambre: (id: number) => axios.delete(`${API_URL}/${id}`, auth()),
+  deleteChambre: (id: number) => http.delete(`${API_URL}/${id}`),
 
   addProduitToChambre: (chambreId: number, produitId: number) =>
-    axios.post<Chambre>(`${API_URL}/${chambreId}/produits/${produitId}`, null, auth()),
+    http.post<Chambre>(`${API_URL}/${chambreId}/produits/${produitId}`, null),
 
   removeProduitFromChambre: (chambreId: number, produitId: number) =>
-    axios.delete<Chambre>(`${API_URL}/${chambreId}/produits/${produitId}`, auth()),
+    http.delete<Chambre>(`${API_URL}/${chambreId}/produits/${produitId}`),
 
   getProduitsByChambre: (chambreId: number) =>
-    axios.get(`${API_URL}/${chambreId}/produits`),
+    http.get<{ id: number; nom: string; categorie?: string; prixUnitaire: number }[]>(`${API_URL}/${chambreId}/produits`),
 
   updatePolitique: (id: number, politique: {
     weekendMultiplier?: number; peakMonths?: string; peakMultiplier?: number;
     cancellationPolicyHours?: number; cancellationFeePercent?: number; nonRefundableHours?: number;
-  }) => axios.patch<Chambre>(`${API_URL}/${id}/politique`, politique, auth()),
+  }) => http.patch<Chambre>(`${API_URL}/${id}/politique`, politique),
 
+  // Staff-only endpoint: the token is required
   getAllProduitsFromStock: () =>
-    axios.get(`${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/chambre/stock/produits`),
+    http.get(`${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/chambre/stock/produits`),
 };

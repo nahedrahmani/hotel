@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Save, RefreshCw, Settings, Plus, Pencil, Trash2, X } from 'lucide-react';
-import { chambreService, type Chambre, ROOM_TYPE_LABELS, STATUT_LABELS, STATUT_COLORS } from '../../services/chambreService';
+import { chambreService, type Chambre, ROOM_TYPE_LABELS, STATUT_LABELS, STATUT_COLORS, roomPhoto } from '../../services/chambreService';
 import { reservationService, type ReservationStatus } from '../../services/reservationService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
+import { apiError } from '../../utils/api';
+import { formatDT } from '../../utils/format';
 
 const MONTHS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
@@ -168,11 +170,6 @@ const AMENITIES: { key: 'wifi' | 'climatisation' | 'television' | 'minibar' | 'b
 const MANUAL_STATUTS = ['disponible', 'hors_service'];
 
 const EMPTY_CHAMBRE: Chambre = { numero: '', type: 'DOUBLE', prix: 0, capacite: 2, statut: 'disponible' };
-
-const apiError = (e: unknown, fallback: string) => {
-  const data = (e as { response?: { data?: { message?: string; error?: string } } })?.response?.data;
-  return data?.message ?? data?.error ?? fallback;
-};
 
 function ChambreModal({ chambre, numerosPris, onClose, onSaved }: {
   chambre: Chambre | null; numerosPris: string[]; onClose: () => void; onSaved: () => void;
@@ -424,8 +421,7 @@ export default function ChambresPage() {
                   <th className="py-3">Type</th>
                   <th className="py-3">Étage</th>
                   <th className="py-3">Prix/nuit</th>
-                  <th className="py-3">Week-end</th>
-                  <th className="py-3">Haute saison</th>
+                  <th className="py-3">Tarifs</th>
                   <th className="py-3">Annulation</th>
                   <th className="py-3">Statut</th>
                   <th className="py-3">Actions</th>
@@ -433,23 +429,26 @@ export default function ChambresPage() {
               </thead>
               <tbody>
                 {chambres.length === 0 && (
-                  <tr><td colSpan={9} className="text-center text-muted py-4">Aucune chambre</td></tr>
+                  <tr><td colSpan={8} className="text-center text-muted py-4">Aucune chambre</td></tr>
                 )}
                 {chambres.map(c => (
                   <tr key={c.id}>
-                    <td className="px-4 py-3 fw-semibold">{c.numero}</td>
+                    <td className="px-4 py-3 fw-semibold">
+                      <div className="d-flex align-items-center gap-3">
+                        <img src={roomPhoto(c)} alt="" loading="lazy" className="rounded-2" style={{ width: 56, height: 38, objectFit: 'cover' }} />
+                        {c.numero}
+                      </div>
+                    </td>
                     <td className="py-3">{ROOM_TYPE_LABELS[c.type] ?? c.type} <span className="text-muted small">· {c.capacite} pers.</span></td>
                     <td className="py-3">{c.etage ?? '—'}</td>
-                    <td className="py-3">{c.prix} DT</td>
-                    <td className="py-3">
-                      {(c.weekendMultiplier ?? 1) > 1
-                        ? <span className="badge bg-warning text-dark">×{c.weekendMultiplier?.toFixed(2)}</span>
-                        : <span className="text-muted small">—</span>}
-                    </td>
-                    <td className="py-3">
-                      {(c.peakMultiplier ?? 1) > 1 && c.peakMonths
-                        ? <span className="badge bg-info text-dark">×{c.peakMultiplier?.toFixed(2)}</span>
-                        : <span className="text-muted small">—</span>}
+                    <td className="py-3">{formatDT(c.prix)}</td>
+                    <td className="py-3 small">
+                      {(c.weekendMultiplier ?? 1) > 1 || ((c.peakMultiplier ?? 1) > 1 && c.peakMonths)
+                        ? [
+                            (c.weekendMultiplier ?? 1) > 1 && `Week-end ×${c.weekendMultiplier?.toFixed(2)}`,
+                            (c.peakMultiplier ?? 1) > 1 && c.peakMonths && `Saison ×${c.peakMultiplier?.toFixed(2)}`,
+                          ].filter(Boolean).join(' · ')
+                        : <span className="text-muted">Standard</span>}
                     </td>
                     <td className="py-3 small text-muted">
                       Gratuit {c.cancellationPolicyHours ?? 48}h · {c.cancellationFeePercent ?? 50}%

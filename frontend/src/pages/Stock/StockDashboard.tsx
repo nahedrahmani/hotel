@@ -1,156 +1,116 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { stockService } from '../../services/stockService';
-import type { Stock } from '../../services/stockService';
-import '../Stock/Stock.css';
+import { useEffect, useMemo, useState } from 'react';
+import { Package, AlertTriangle, Wallet } from 'lucide-react';
+import { stockService, type Stock } from '../../services/stockService';
+import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
+import { apiError } from '../../utils/api';
+import { formatDT } from '../../utils/format';
+import StockTabs from './StockTabs';
+
+const StatCard = ({ label, value, icon, color }: { label: string; value: string | number; icon: React.ReactNode; color: string }) => (
+  <div className="card border-0 shadow-sm h-100">
+    <div className="card-body d-flex align-items-center gap-3">
+      <div className={`rounded-circle bg-${color} bg-opacity-10 p-3 text-${color}`}>{icon}</div>
+      <div>
+        <div className="fs-4 fw-bold">{value}</div>
+        <div className="text-muted small">{label}</div>
+      </div>
+    </div>
+  </div>
+);
 
 export default function StockDashboard() {
-  const navigate = useNavigate();
-  const [stocks, setStocks] = useState<Stock[]>([]);
-  const [alertes, setAlertes] = useState<Stock[]>([]);
-  const [valeurTotale, setValeurTotale] = useState(0);
+  const canSeeValue = hasAnyRole(MANAGEMENT_ROLES);
+  const [stocks, setStocks]   = useState<Stock[]>([]);
+  const [valeur, setValeur]   = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError]     = useState('');
+  const [search, setSearch]   = useState('');
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const load = async () => {
+    setLoading(true);
     setError('');
+    // The stock value is ADMIN/MANAGER only; staff still get the inventory without it
+    if (canSeeValue) {
+      stockService.getValeurTotale().then(r => setValeur(r.data.valeurTotale)).catch(() => setValeur(null));
+    }
     try {
-      const [stockRes, alertesRes, valeurRes] = await Promise.all([
-        stockService.getInventaire(),
-        stockService.getAlertes(),
-        stockService.getValeurTotale(),
-      ]);
-      setStocks(stockRes.data.filter((s: Stock) => s.produitNom && s.produitNom !== 'Inconnu'));
-      setAlertes(alertesRes.data.filter((s: Stock) => s.produitNom && s.produitNom !== 'Inconnu'));
-      setValeurTotale(valeurRes.data.valeurTotale);
-    } catch (err) {
-      console.error('Erreur lors du chargement du stock:', err);
-      setError('Impossible de charger les données du stock. Vérifiez que le service est disponible.');
+      setStocks((await stockService.getInventaire()).data.filter(s => s.produitNom && s.produitNom !== 'Inconnu'));
+    } catch (e) {
+      setError(apiError(e, 'Impossible de charger l\'inventaire.'));
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) return <div className="text-center p-5">Chargement...</div>;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []);
+
+  const ruptures = stocks.filter(s => s.enRupture);
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return stocks
+      .filter(s => !q || s.produitNom.toLowerCase().includes(q) || (s.emplacement ?? '').toLowerCase().includes(q))
+      // Shortages first, then alphabetical
+      .sort((a, b) => Number(b.enRupture) - Number(a.enRupture) || a.produitNom.localeCompare(b.produitNom));
+  }, [stocks, search]);
 
   return (
-        <div className="stock-container" style={{ padding: '20px' }}>
-          <div className="stock-header">
-            <div>
-              <h1 className="stock-title">Dashboard Stock</h1>
-              <div className="d-flex gap-2 mt-3">
-                <button className="btn-modern btn-info-modern" onClick={() => navigate('/dashboard/stock/test-integration')}>
-                  Test Intégration
-                </button>
-                <button className="btn-modern btn-warning-modern" onClick={() => navigate('/dashboard/stock/chambre-manager')}>
-                  Chambre Manager
-                </button>
-              </div>
-            </div>
-            <div className="d-flex gap-2">
-              <button className="btn-modern btn-primary-modern" onClick={() => navigate('/dashboard/stock/produits')}>
-                Gérer Produits
-              </button>
-              <button className="btn-modern btn-success-modern" onClick={() => navigate('/dashboard/stock/mouvements')}>
-                Mouvements
-              </button>
-            </div>
-          </div>
+    <div className="container-fluid p-4">
+      <h2 className="fw-bold mb-3">Stock</h2>
+      <StockTabs />
 
-          {error && (
-            <div className="alert alert-danger mb-4">
-              {error}
-              <button className="btn btn-sm btn-outline-danger ms-3" onClick={loadData}>Réessayer</button>
-            </div>
-          )}
-
-          <div className="mb-4" style={{ width: '100%', height: '1000px' }}>
-            <iframe
-              title="Power BI Dashboard Stock"
-              width="100%"
-              height="100%"
-              src="https://app.powerbi.com/reportEmbed?reportId=a49d4118-47e1-42fd-a21c-a865ba1479a4&autoAuth=true&ctid=604f1a96-cbe8-43f8-abbf-f8eaf5d85730"
-              frameBorder="0"
-              allowFullScreen
-            />
-          </div>
-
-          <div className="row g-4 mb-4">
-            <div className="col-md-4">
-              <div className="stat-card primary">
-                <div className="stat-icon"></div>
-                <div className="stat-value">{stocks.length}</div>
-                <div className="stat-label">Produits en Stock</div>
-              </div>
-            </div>
-            <div className="col-md-4">
-              <div className="stat-card danger">
-                <div className="stat-icon"></div>
-                <div className="stat-value">{alertes.length}</div>
-                <div className="stat-label">Alertes Rupture</div>
-              </div>
-            </div>
-            <div className="col-md-4">
-              <div className="stat-card success">
-                <div className="stat-icon"></div>
-                <div className="stat-value">{valeurTotale.toFixed(2)} DT</div>
-                <div className="stat-label">Valeur Totale</div>
-              </div>
-            </div>
-          </div>
-
-          {alertes.length > 0 && (
-            <div className="alert alert-warning alert-modern mb-4">
-              <h5 className="mb-3"><strong>Produits en rupture de stock</strong></h5>
-              <ul className="mb-0">
-                {alertes.map((stock) => (
-                  <li key={stock.id}>
-                    <strong>{stock.produitNom}</strong> - Quantité: {stock.quantiteDisponible}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="data-table">
-            <div className="table-header">
-              <h5 className="table-title">Inventaire Complet</h5>
-            </div>
-            <div className="p-0">
-              <table className="table table-modern mb-0">
-                <thead>
-                  <tr>
-                    <th>Produit</th>
-                    <th>Quantité Disponible</th>
-                    <th>Quantité Réservée</th>
-                    <th>Emplacement</th>
-                    <th>Statut</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stocks.map((stock) => (
-                    <tr key={stock.id}>
-                      <td>{stock.produitNom}</td>
-                      <td>{stock.quantiteDisponible}</td>
-                      <td>{stock.quantiteReservee}</td>
-                      <td>{stock.emplacement}</td>
-                      <td>
-                        {stock.enRupture ? (
-                          <span className="badge badge-modern bg-danger">Rupture</span>
-                        ) : (
-                          <span className="badge badge-modern bg-success">✓ OK</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {error && (
+        <div className="alert alert-danger py-2 d-flex justify-content-between align-items-center">
+          {error}
+          <button className="btn btn-sm btn-outline-danger" onClick={load}>Réessayer</button>
         </div>
+      )}
+
+      <div className="row g-3 mb-4">
+        <div className="col-md-4"><StatCard label="Produits suivis" value={stocks.length} icon={<Package size={20} />} color="dark" /></div>
+        <div className="col-md-4"><StatCard label="En rupture" value={ruptures.length} icon={<AlertTriangle size={20} />} color={ruptures.length ? 'danger' : 'success'} /></div>
+        {canSeeValue && (
+          <div className="col-md-4"><StatCard label="Valeur du stock" value={valeur == null ? '—' : formatDT(valeur)} icon={<Wallet size={20} />} color="primary" /></div>
+        )}
+      </div>
+
+      <div className="card border-0 shadow-sm">
+        <div className="card-body border-bottom d-flex justify-content-between align-items-center gap-3">
+          <input className="form-control" style={{ maxWidth: 320 }} placeholder="Produit ou emplacement"
+            value={search} onChange={e => setSearch(e.target.value)} />
+          <span className="text-muted small">{shown.length} produit(s)</span>
+        </div>
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead className="border-bottom">
+              <tr>
+                <th className="px-4 py-3">Produit</th>
+                <th className="py-3">Disponible</th>
+                <th className="py-3">Réservé</th>
+                <th className="py-3">Emplacement</th>
+                <th className="py-3">État</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={5} className="text-center py-4"><div className="spinner-border spinner-border-sm" /></td></tr>
+              ) : shown.length === 0 ? (
+                <tr><td colSpan={5} className="text-center text-muted py-4">Aucun produit</td></tr>
+              ) : shown.map(s => (
+                <tr key={s.id}>
+                  <td className="px-4 py-3 fw-semibold">{s.produitNom}</td>
+                  <td className="py-3">{s.quantiteDisponible}</td>
+                  <td className="py-3 text-muted">{s.quantiteReservee}</td>
+                  <td className="py-3 text-muted">{s.emplacement || '—'}</td>
+                  <td className="py-3">
+                    <span className={`badge bg-${s.enRupture ? 'danger' : 'success'}`}>{s.enRupture ? 'Rupture' : 'Disponible'}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }

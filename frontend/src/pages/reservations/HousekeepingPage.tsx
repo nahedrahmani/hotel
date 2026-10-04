@@ -38,7 +38,7 @@ const HousekeepingPage: React.FC = () => {
       await chambreService.marquerPropre(chambre.id);
       setRooms(prev => prev.filter(r => r.id !== chambre.id));
     } catch {
-      alert('Erreur lors de la mise à jour du statut.');
+      setError('Erreur lors de la mise à jour du statut.');
     } finally {
       setMarking(null);
     }

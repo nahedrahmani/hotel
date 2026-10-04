@@ -1,9 +1,7 @@
-import axios from 'axios';
-import keycloak from '../config/keycloak';
+import { http } from './http';
 
 const API_URL = `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/stock`;
 
-const auth = () => ({ headers: { Authorization: `Bearer ${keycloak.token}` } });
 
 export type Produit = {
   id?: number;
@@ -36,27 +34,41 @@ export type MouvementStock = {
   utilisateurId?: string;
 };
 
+export type MouvementHistorique = MouvementStock & {
+  id: number;
+  dateCreation: string;
+};
+
+export const CATEGORIE_LABELS: Record<string, string> = {
+  LINGE: 'Linge', AMENITIES: "Produits d'accueil", NETTOYAGE: 'Nettoyage', CUISINE: 'Cuisine',
+  BOISSONS: 'Boissons', EQUIPEMENT: 'Équipement', MOBILIER: 'Mobilier',
+};
+
+export const TYPE_MOUVEMENT_LABELS: Record<MouvementStock['typeMouvement'], string> = {
+  ENTREE: 'Entrée', SORTIE: 'Sortie', AJUSTEMENT: 'Ajustement',
+};
+
 export const stockService = {
   // Produits
-  getAllProduits: () => axios.get<Produit[]>(`${API_URL}/produits`, auth()),
-  getProduitById: (id: number) => axios.get<Produit>(`${API_URL}/produits/${id}`, auth()),
-  createProduit: (data: Produit) => axios.post<Produit>(`${API_URL}/produits`, data, auth()),
-  updateProduit: (id: number, data: Produit) => axios.put<Produit>(`${API_URL}/produits/${id}`, data, auth()),
-  deleteProduit: (id: number) => axios.delete(`${API_URL}/produits/${id}`, auth()),
-  searchProduits: (nom: string) => axios.get<Produit[]>(`${API_URL}/produits/search?nom=${encodeURIComponent(nom)}`, auth()),
+  getAllProduits: () => http.get<Produit[]>(`${API_URL}/produits`),
+  getProduitById: (id: number) => http.get<Produit>(`${API_URL}/produits/${id}`),
+  createProduit: (data: Produit) => http.post<Produit>(`${API_URL}/produits`, data),
+  updateProduit: (id: number, data: Produit) => http.put<Produit>(`${API_URL}/produits/${id}`, data),
+  deleteProduit: (id: number) => http.delete(`${API_URL}/produits/${id}`),
+  searchProduits: (nom: string) => http.get<Produit[]>(`${API_URL}/produits/search?nom=${encodeURIComponent(nom)}`),
 
   // Stock
-  getInventaire: () => axios.get<Stock[]>(`${API_URL}/inventaire`, auth()),
-  getStockByProduit: (produitId: number) => axios.get<Stock>(`${API_URL}/produit/${produitId}`, auth()),
-  entreeStock: (data: MouvementStock) => axios.post(`${API_URL}/entree`, data, auth()),
-  sortieStock: (data: MouvementStock) => axios.post(`${API_URL}/sortie`, data, auth()),
-  ajustementStock: (data: MouvementStock) => axios.post(`${API_URL}/ajustement`, data, auth()),
-  getAlertes: () => axios.get<Stock[]>(`${API_URL}/alertes`, auth()),
+  getInventaire: () => http.get<Stock[]>(`${API_URL}/inventaire`),
+  getStockByProduit: (produitId: number) => http.get<Stock>(`${API_URL}/produit/${produitId}`),
+  entreeStock: (data: MouvementStock) => http.post(`${API_URL}/entree`, data),
+  sortieStock: (data: MouvementStock) => http.post(`${API_URL}/sortie`, data),
+  ajustementStock: (data: MouvementStock) => http.post(`${API_URL}/ajustement`, data),
+  getAlertes: () => http.get<Stock[]>(`${API_URL}/alertes`),
 
   // Stats
-  getValeurTotale: () => axios.get<{ valeurTotale: number }>(`${API_URL}/stats/valeur`, auth()),
+  getValeurTotale: () => http.get<{ valeurTotale: number }>(`${API_URL}/stats/valeur`),
 
   // Mouvements
-  getAllMouvements: () => axios.get(`${API_URL}/mouvements`, auth()),
-  getMouvementsByProduit: (produitId: number) => axios.get(`${API_URL}/mouvements/produit/${produitId}`, auth()),
+  getAllMouvements: () => http.get<MouvementHistorique[]>(`${API_URL}/mouvements`),
+  getMouvementsByProduit: (produitId: number) => http.get(`${API_URL}/mouvements/produit/${produitId}`),
 };

@@ -1,8 +1,6 @@
-import axios from 'axios';
-import keycloak from '../config/keycloak';
+import { http } from './http';
 
 const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
-const auth = () => ({ headers: { Authorization: `Bearer ${keycloak.token}` } });
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -24,6 +22,10 @@ export type ClientProfile = {
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export const BED_TYPE_LABELS: Record<BedType, string> = {
+  SINGLE: 'Lit simple', DOUBLE: 'Lit double', TWIN: 'Deux lits séparés', KING: 'Grand lit', SUITE: 'Suite',
 };
 
 export type DocumentType = 'PASSPORT' | 'ID_CARD' | 'VISA' | 'OTHER';
@@ -96,43 +98,46 @@ export const STATUT_LABELS: Record<DemandeStatut, string> = {
 
 export const clientService = {
   // Profiles
-  getAll:           ()                       => axios.get<ClientProfile[]>(`${API}/api/clients`, auth()),
-  getByKeycloakId:  (id: string)             => axios.get<ClientProfile>(`${API}/api/clients/${id}`, auth()),
-  getHistory:       (id: string)             => axios.get<CheckInRecord[]>(`${API}/api/clients/${id}/history`, auth()),
-  createOrUpdate:   (p: ClientProfile)       => axios.post<ClientProfile>(`${API}/api/clients`, p, auth()),
-  update:           (id: string, p: ClientProfile) => axios.put<ClientProfile>(`${API}/api/clients/${id}`, p, auth()),
-  delete:           (id: string)             => axios.delete(`${API}/api/clients/${id}`, auth()),
+  getAll:           ()                       => http.get<ClientProfile[]>(`${API}/api/clients`),
+  getByKeycloakId:  (id: string)             => http.get<ClientProfile>(`${API}/api/clients/${id}`),
+  getHistory:       (id: string)             => http.get<CheckInRecord[]>(`${API}/api/clients/${id}/history`),
+  createOrUpdate:   (p: ClientProfile)       => http.post<ClientProfile>(`${API}/api/clients`, p),
+  update:           (id: string, p: ClientProfile) => http.put<ClientProfile>(`${API}/api/clients/${id}`, p),
+  delete:           (id: string)             => http.delete(`${API}/api/clients/${id}`),
 
   // Documents
-  getDocuments: (id: string) => axios.get<ClientDocument[]>(`${API}/api/clients/${id}/documents`, auth()),
+  getDocuments: (id: string) => http.get<ClientDocument[]>(`${API}/api/clients/${id}/documents`),
   uploadDocument: (id: string, type: DocumentType, file: File, documentNumber?: string, expiryDate?: string) => {
     const fd = new FormData();
     fd.append('type', type);
     fd.append('file', file);
     if (documentNumber) fd.append('documentNumber', documentNumber);
     if (expiryDate)     fd.append('expiryDate', expiryDate);
-    return axios.post<ClientDocument>(`${API}/api/clients/${id}/documents`, fd, auth());
+    return http.post<ClientDocument>(`${API}/api/clients/${id}/documents`, fd);
   },
   deleteDocument: (clientId: string, docId: number) =>
-    axios.delete(`${API}/api/clients/${clientId}/documents/${docId}`, auth()),
+    http.delete(`${API}/api/clients/${clientId}/documents/${docId}`),
 
   // Demandes
   getAllDemandes:    (statut?: DemandeStatut) =>
-    axios.get<Demande[]>(`${API}/api/demandes${statut ? `?statut=${statut}` : ''}`, auth()),
-  getDemandeById:   (id: number)             => axios.get<Demande>(`${API}/api/demandes/${id}`, auth()),
-  getDemandesByClient: (keycloakId: string)  => axios.get<Demande[]>(`${API}/api/demandes/client/${keycloakId}`, auth()),
-  createDemande:    (d: Demande)             => axios.post<Demande>(`${API}/api/demandes`, d, auth()),
+    http.get<Demande[]>(`${API}/api/demandes${statut ? `?statut=${statut}` : ''}`),
+  getDemandeById:   (id: number)             => http.get<Demande>(`${API}/api/demandes/${id}`),
+  getDemandesByClient: (keycloakId: string)  => http.get<Demande[]>(`${API}/api/demandes/client/${keycloakId}`),
+  createDemande:    (d: Demande)             => http.post<Demande>(`${API}/api/demandes`, d),
   updateStatut:     (id: number, statut: DemandeStatut) =>
-    axios.put<Demande>(`${API}/api/demandes/${id}/statut`, { statut }, auth()),
+    http.put<Demande>(`${API}/api/demandes/${id}/statut`, { statut }),
   assignDemande:    (id: number, assignedTo: string) =>
-    axios.put<Demande>(`${API}/api/demandes/${id}/assign`, { assignedTo }, auth()),
-  deleteDemande:    (id: number)             => axios.delete(`${API}/api/demandes/${id}`, auth()),
+    http.put<Demande>(`${API}/api/demandes/${id}/assign`, { assignedTo }),
+  deleteDemande:    (id: number)             => http.delete(`${API}/api/demandes/${id}`),
 
   // Check-in / Check-out
   checkIn:  (reservationId: number, keycloakId: string, documentVerified: boolean, notes?: string) =>
-    axios.post<CheckInRecord>(`${API}/api/checkinout/checkin/${reservationId}`, { keycloakId, documentVerified, notes }, auth()),
+    http.post<CheckInRecord>(`${API}/api/checkinout/checkin/${reservationId}`, { keycloakId, documentVerified, notes }),
   checkOut: (reservationId: number, keycloakId: string, notes?: string) =>
-    axios.post<CheckInRecord>(`${API}/api/checkinout/checkout/${reservationId}`, { keycloakId, notes }, auth()),
+    http.post<CheckInRecord>(`${API}/api/checkinout/checkout/${reservationId}`, { keycloakId, notes }),
   getRecordsByReservation: (reservationId: number) =>
-    axios.get<CheckInRecord[]>(`${API}/api/checkinout/reservation/${reservationId}`, auth()),
+    http.get<CheckInRecord[]>(`${API}/api/checkinout/reservation/${reservationId}`),
+  // Minibar / room consumption recorded at checkout (added to the stay's invoice)
+  addConso: (reservationId: number, conso: { chambreId?: number; produitId: number; quantite: number }) =>
+    http.post(`${API}/api/checkinout/conso/${reservationId}`, conso),
 };

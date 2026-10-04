@@ -3,10 +3,14 @@ import { Plus, X, Search, Send, Ban, Trash2, CreditCard } from 'lucide-react';
 import {
   paymentService, type Facture, type LigneFacture, type StatutFacture,
   type TypeFacture, type MethodePaiement,
-  STATUT_FACTURE_COLORS, STATUT_FACTURE_LABELS, TYPE_FACTURE_LABELS, METHODE_LABELS, METHODE_ICONS,
+  STATUT_FACTURE_COLORS, STATUT_FACTURE_LABELS, TYPE_FACTURE_LABELS, METHODE_LABELS, montantsLigne, STRIPE_ENABLED,
 } from '../../services/paymentService';
 import StripePaymentModal from '../../components/StripePaymentModal';
+import MethodeIcon from '../../components/MethodeIcon';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
+import { apiError } from '../../utils/api';
+import { formatDate, formatDT } from '../../utils/format';
+import { useConfirm } from '../../components/useConfirm';
 
 const TYPES: TypeFacture[] = ['HEBERGEMENT', 'RESTAURATION', 'SERVICE', 'TRANSPORT', 'DIVERS'];
 const STATUTS: StatutFacture[] = ['BROUILLON', 'EMISE', 'PARTIELLEMENT_PAYEE', 'PAYEE', 'EN_RETARD', 'ANNULEE'];
@@ -20,6 +24,7 @@ const EMPTY_FACTURE: Facture = {
 };
 
 export default function FacturesPage() {
+  const [confirm, confirmDialog] = useConfirm();
   // Hide actions the backend refuses for this role (ADMIN/MANAGER only)
   const canManage = hasAnyRole(MANAGEMENT_ROLES);
   const isAdmin = hasAnyRole(['ADMIN']);
@@ -50,8 +55,8 @@ export default function FacturesPage() {
   const load = async () => {
     setLoading(true); setError('');
     try { setFactures((await paymentService.getAllFactures()).data); }
-    catch (e: any) {
-      const status = e?.response?.status;
+    catch (e) {
+      const status = (e as { response?: { status?: number } })?.response?.status ?? 0;
       if (status >= 500) setError('Le service de paiement est indisponible. Réessayez dans quelques instants.');
       else if (status === 403) setError('Accès refusé — vérifiez vos permissions.');
       else if (status === 401) setError('Session expirée — reconnectez-vous.');
@@ -75,9 +80,10 @@ export default function FacturesPage() {
   const updateLigne = (i: number, field: keyof LigneFacture, val: unknown) =>
     setForm(f => ({ ...f, lignes: f.lignes.map((l, idx) => idx === i ? { ...l, [field]: val } : l) }));
 
-  const sousTotal = form.lignes.reduce((s, l) => s + (l.quantite || 0) * (l.prixUnitaire || 0), 0);
-  const totalTva  = form.lignes.reduce((s, l) => s + (l.quantite || 0) * (l.prixUnitaire || 0) * ((l.tauxTva ?? 19) / 100), 0);
-  const totalTTC  = sousTotal + totalTva;
+  // Stay lines carry a VAT-inclusive price; montantsLigne applies the same rule as the backend
+  const sousTotal = form.lignes.reduce((s, l) => s + montantsLigne(l).ht, 0);
+  const totalTva  = form.lignes.reduce((s, l) => s + montantsLigne(l).tva, 0);
+  const totalTTC  = form.lignes.reduce((s, l) => s + montantsLigne(l).ttc, 0);
 
   const handleSave = async () => {
     if (!form.clientNom || !form.dateEmission || form.lignes.length === 0) {
@@ -89,25 +95,25 @@ export default function FacturesPage() {
       else await paymentService.createFacture(form);
       setShowModal(false); load();
     } catch (e: unknown) {
-      setFormError((e as any)?.response?.data?.message ?? 'Erreur lors de la sauvegarde.');
+      setFormError(apiError(e, 'Erreur lors de la sauvegarde.'));
     } finally { setSaving(false); }
   };
 
   const handleEmettre = async (id: number) => {
     try { await paymentService.emettreFacture(id); load(); }
-    catch (e: unknown) { alert((e as any)?.response?.data?.message ?? 'Erreur.'); }
+    catch (e: unknown) { setError(apiError(e, 'Erreur.')); }
   };
 
   const handleAnnuler = async (id: number) => {
-    if (!window.confirm('Annuler cette facture ?')) return;
+    if (!(await confirm('Annuler cette facture ?', { danger: true, confirmLabel: 'Annuler la facture' }))) return;
     try { await paymentService.annulerFacture(id); load(); }
-    catch (e: unknown) { alert((e as any)?.response?.data?.message ?? 'Erreur.'); }
+    catch (e: unknown) { setError(apiError(e, 'Erreur.')); }
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Supprimer cette facture ?')) return;
+    if (!(await confirm('Supprimer cette facture ?', { danger: true }))) return;
     try { await paymentService.deleteFacture(id); load(); }
-    catch (e: unknown) { alert((e as any)?.response?.data?.message ?? 'Erreur.'); }
+    catch (e: unknown) { setError(apiError(e, 'Erreur.')); }
   };
 
   // ── Payment helpers ───────────────────────────────────────────────────────
@@ -136,7 +142,7 @@ export default function FacturesPage() {
       await paymentService.enregistrerPaiement({ factureId: selectedFacture.id, ...paiementForm });
       setShowManualModal(false); load();
     } catch (e: unknown) {
-      setFormError((e as any)?.response?.data?.message ?? 'Erreur.');
+      setFormError(apiError(e, 'Erreur.'));
     } finally { setSaving(false); }
   };
 
@@ -147,6 +153,7 @@ export default function FacturesPage() {
 
   return (
     <div className="container-fluid p-4">
+      {confirmDialog}
 
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
@@ -212,14 +219,14 @@ export default function FacturesPage() {
                         {TYPE_FACTURE_LABELS[f.typeFacture ?? 'DIVERS']}
                       </span>
                     </td>
-                    <td className="text-muted">{f.dateEmission}</td>
+                    <td className="text-muted text-nowrap">{formatDate(f.dateEmission)}</td>
                     <td className={f.statut === 'EN_RETARD' ? 'text-danger fw-semibold' : 'text-muted'}>
                       {f.dateEcheance ?? '—'}
                     </td>
-                    <td className="fw-semibold">{Number(f.totalTTC ?? 0).toFixed(3)} DT</td>
-                    <td className="text-success">{Number(f.montantPaye ?? 0).toFixed(3)} DT</td>
+                    <td className="fw-semibold text-nowrap">{formatDT(f.totalTTC ?? 0)}</td>
+                    <td className="text-success text-nowrap">{formatDT(f.montantPaye ?? 0)}</td>
                     <td className={Number(f.montantRestant) > 0 ? 'text-danger fw-semibold' : 'text-muted'}>
-                      {Number(f.montantRestant ?? 0).toFixed(3)} DT
+                      {formatDT(f.montantRestant ?? 0)}
                     </td>
                     <td>
                       <span className={`badge bg-${STATUT_FACTURE_COLORS[f.statut ?? 'BROUILLON']}`}>
@@ -303,7 +310,7 @@ export default function FacturesPage() {
                 <div className="table-responsive mb-3">
                   <table className="table table-sm align-middle">
                     <thead className="table-light">
-                      <tr><th>Description</th><th style={{width:80}}>Qté</th><th style={{width:130}}>Prix HT</th><th style={{width:90}}>TVA %</th><th style={{width:120}}>Total TTC</th><th style={{width:40}}></th></tr>
+                      <tr><th>Description</th><th style={{width:80}}>Qté</th><th style={{width:130}}>Prix unitaire</th><th style={{width:90}}>TVA %</th><th style={{width:120}}>Total TTC</th><th style={{width:40}}></th></tr>
                     </thead>
                     <tbody>
                       {form.lignes.map((l, i) => (
@@ -313,11 +320,12 @@ export default function FacturesPage() {
                           <td><input type="number" min={1} className="form-control form-control-sm" value={l.quantite}
                               onChange={e => updateLigne(i, 'quantite', Number(e.target.value))} /></td>
                           <td><input type="number" min={0} step="0.001" className="form-control form-control-sm" value={l.prixUnitaire}
-                              onChange={e => updateLigne(i, 'prixUnitaire', Number(e.target.value))} /></td>
+                              onChange={e => updateLigne(i, 'prixUnitaire', Number(e.target.value))} />
+                            <div className="text-muted" style={{ fontSize: '0.7rem' }}>{l.prixTtc ? 'TTC' : 'HT'}</div></td>
                           <td><input type="number" min={0} max={100} className="form-control form-control-sm" value={l.tauxTva ?? 19}
                               onChange={e => updateLigne(i, 'tauxTva', Number(e.target.value))} /></td>
                           <td className="fw-semibold">
-                            {((l.quantite || 0) * (l.prixUnitaire || 0) * (1 + (l.tauxTva ?? 19) / 100)).toFixed(3)} DT
+                            {formatDT(montantsLigne(l).ttc)}
                           </td>
                           <td>
                             <button className="btn btn-sm btn-outline-danger py-0" onClick={() => removeLigne(i)} disabled={form.lignes.length === 1}>
@@ -336,9 +344,9 @@ export default function FacturesPage() {
                 <div className="d-flex justify-content-end mb-3">
                   <table className="table table-sm w-auto mb-0">
                     <tbody>
-                      <tr><td className="text-muted pe-4">Sous-total HT</td><td className="text-end fw-semibold">{sousTotal.toFixed(3)} DT</td></tr>
-                      <tr><td className="text-muted pe-4">TVA</td><td className="text-end">{totalTva.toFixed(3)} DT</td></tr>
-                      <tr className="table-active"><td className="fw-bold pe-4">Total TTC</td><td className="text-end fw-bold fs-5">{totalTTC.toFixed(3)} DT</td></tr>
+                      <tr><td className="text-muted pe-4">Sous-total HT</td><td className="text-end fw-semibold">{formatDT(sousTotal)}</td></tr>
+                      <tr><td className="text-muted pe-4">TVA</td><td className="text-end">{formatDT(totalTva)}</td></tr>
+                      <tr className="table-active"><td className="fw-bold pe-4">Total TTC</td><td className="text-end fw-bold fs-5">{formatDT(totalTTC)}</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -373,20 +381,22 @@ export default function FacturesPage() {
               <div className="modal-body">
                 <div className="alert alert-info py-2 small mb-4">
                   Facture <strong>{selectedFacture.numero}</strong> — Restant dû :&nbsp;
-                  <strong>{Number(selectedFacture.montantRestant ?? 0).toFixed(3)} DT</strong>
+                  <strong>{formatDT(selectedFacture.montantRestant ?? 0)}</strong>
                 </div>
 
-                {/* Card via Stripe */}
-                <button
-                  className="btn btn-dark w-100 d-flex align-items-center gap-3 mb-3 py-3"
-                  onClick={() => pickMethod('CARTE_BANCAIRE')}
-                >
-                  <span style={{ fontSize: '1.6rem' }}>💳</span>
-                  <div className="text-start">
-                    <div className="fw-bold">Carte bancaire</div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Paiement sécurisé via Stripe</div>
-                  </div>
-                </button>
+                {/* Card via Stripe, only once real Stripe keys are configured */}
+                {STRIPE_ENABLED && (
+                  <button
+                    className="btn btn-dark w-100 d-flex align-items-center gap-3 mb-3 py-3"
+                    onClick={() => pickMethod('CARTE_BANCAIRE')}
+                  >
+                    <MethodeIcon methode="CARTE_BANCAIRE" size={22} />
+                    <div className="text-start">
+                      <div className="fw-bold">Carte bancaire</div>
+                      <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Paiement en ligne via Stripe</div>
+                    </div>
+                  </button>
+                )}
 
                 {/* Manual methods */}
                 <div className="row g-2">
@@ -396,7 +406,7 @@ export default function FacturesPage() {
                         className="btn btn-outline-secondary w-100 d-flex flex-column align-items-center py-3 gap-1"
                         onClick={() => pickMethod(m)}
                       >
-                        <span style={{ fontSize: '1.5rem' }}>{METHODE_ICONS[m]}</span>
+                        <MethodeIcon methode={m} size={20} />
                         <span className="small fw-semibold">{METHODE_LABELS[m]}</span>
                       </button>
                     </div>
@@ -425,7 +435,7 @@ export default function FacturesPage() {
             <div className="modal-content border-0 shadow">
               <div className="modal-header border-0">
                 <h5 className="modal-title fw-bold d-flex align-items-center gap-2">
-                  <span style={{ fontSize: '1.3rem' }}>{METHODE_ICONS[paiementForm.methodePaiement]}</span>
+                  <MethodeIcon methode={paiementForm.methodePaiement} size={18} />
                   {METHODE_LABELS[paiementForm.methodePaiement]}
                 </h5>
                 <button className="btn btn-sm btn-light rounded-circle" onClick={() => setShowManualModal(false)} aria-label="Fermer">
@@ -436,7 +446,7 @@ export default function FacturesPage() {
                 {formError && <div className="alert alert-danger py-2">{formError}</div>}
                 <div className="alert alert-info py-2 small mb-4">
                   Facture <strong>{selectedFacture.numero}</strong> — Restant dû :&nbsp;
-                  <strong>{Number(selectedFacture.montantRestant ?? 0).toFixed(3)} DT</strong>
+                  <strong>{formatDT(selectedFacture.montantRestant ?? 0)}</strong>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Montant (DT) *</label>

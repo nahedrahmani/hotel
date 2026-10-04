@@ -10,6 +10,8 @@ import {
 } from '../../services/clientService';
 import keycloak from '../../config/keycloak';
 import { hasAnyRole } from '../../config/access';
+import { apiError } from '../../utils/api';
+import { useConfirm } from '../../components/useConfirm';
 
 const BED_LABELS: Record<BedType, string> = {
   SINGLE: 'Lit simple', DOUBLE: 'Lit double', TWIN: 'Lits jumeaux', KING: 'Lit King', SUITE: 'Suite',
@@ -31,6 +33,7 @@ const EMPTY_PROFILE: ClientProfile = {
 };
 
 const ClientsPage: React.FC = () => {
+  const [confirm, confirmDialog] = useConfirm();
   const isAdmin = hasAnyRole(['ADMIN']);
   const [clients, setClients]         = useState<ClientProfile[]>([]);
   const [selected, setSelected]       = useState<ClientProfile | null>(null);
@@ -92,19 +95,19 @@ const ClientsPage: React.FC = () => {
       setShowForm(false);
       fetchClients();
       if (selected?.keycloakId === form.keycloakId) selectClient(form);
-    } catch (e: any) {
-      alert(e?.response?.data ?? 'Erreur lors de la sauvegarde.');
+    } catch (e) {
+      setError(apiError(e, 'Erreur lors de la sauvegarde.'));
     } finally { setSaving(false); }
   };
 
   const handleDelete = async (c: ClientProfile) => {
-    if (!window.confirm(`Supprimer le profil de ${c.firstName} ${c.lastName} ?`)) return;
+    if (!(await confirm(`Supprimer le profil de ${c.firstName} ${c.lastName} ?`, { danger: true }))) return;
     try {
       await clientService.delete(c.keycloakId);
       if (selected?.keycloakId === c.keycloakId) setSelected(null);
       fetchClients();
     } catch {
-      alert('Erreur lors de la suppression.');
+      setError('Erreur lors de la suppression.');
     }
   };
 
@@ -118,7 +121,7 @@ const ClientsPage: React.FC = () => {
       setDocuments(prev => [...prev, res.data]);
       setDocFile(null); setDocNumber(''); setDocExpiry('');
     } catch {
-      alert('Erreur lors du téléversement du document.');
+      setError('Erreur lors du téléversement du document.');
     } finally { setUploading(false); }
   };
 
@@ -128,12 +131,13 @@ const ClientsPage: React.FC = () => {
       await clientService.deleteDocument(selected.keycloakId, docId);
       setDocuments(prev => prev.filter(d => d.id !== docId));
     } catch {
-      alert('Erreur lors de la suppression du document.');
+      setError('Erreur lors de la suppression du document.');
     }
   };
 
   return (
     <div className="container-fluid p-4">
+      {confirmDialog}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="fw-bold mb-0">Fiches clients</h2>
         <button className="btn btn-dark d-flex align-items-center gap-2" onClick={openCreate}>
@@ -364,7 +368,7 @@ const ClientsPage: React.FC = () => {
                       <input
                         type={type as string}
                         className="form-control"
-                        value={(form as any)[field as string] ?? ''}
+                        value={String(form[field as keyof typeof form] ?? '')}
                         onChange={e => setForm(f => ({ ...f, [field as string]: type === 'number' ? Number(e.target.value) : e.target.value }))}
                         readOnly={readOnly as boolean}
                       />

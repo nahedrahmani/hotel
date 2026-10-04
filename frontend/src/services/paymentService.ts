@@ -1,16 +1,14 @@
 import axios from 'axios';
-import keycloak from '../config/keycloak';
+import { withAuth } from './http';
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080') + '/api/payment';
-const api = axios.create({ baseURL: BASE });
+// Token attached and refreshed by the shared interceptor
+const api = withAuth(axios.create({ baseURL: BASE }));
 
-// Attach JWT to every payment-service request
-api.interceptors.request.use(config => {
-  if (keycloak.token) {
-    config.headers.Authorization = `Bearer ${keycloak.token}`;
-  }
-  return config;
-});
+export const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '';
+
+/** Card payment is offered only once a real Stripe key replaces the .env placeholder. */
+export const STRIPE_ENABLED = /^pk_(test|live)_/.test(STRIPE_PUBLISHABLE_KEY) && !STRIPE_PUBLISHABLE_KEY.includes('REPLACE');
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -25,9 +23,25 @@ export interface LigneFacture {
   quantite: number;
   prixUnitaire: number;
   tauxTva?: number;
+  /** prixUnitaire includes VAT (stay lines created from a booking) */
+  prixTtc?: boolean;
   montantHT?: number;
   montantTva?: number;
   montantTTC?: number;
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/** HT / TVA / TTC of a line — same rule as payment-service LigneFacture, keep both in sync. */
+export function montantsLigne(l: LigneFacture) {
+  const base = round3((l.quantite || 0) * (l.prixUnitaire || 0));
+  const taux = l.tauxTva ?? 19;
+  if (l.prixTtc) {
+    const ht = round3(base * 100 / (100 + taux));
+    return { ht, tva: round3(base - ht), ttc: base };
+  }
+  const tva = round3(base * taux / 100);
+  return { ht: base, tva, ttc: round3(base + tva) };
 }
 
 export interface Paiement {
@@ -103,10 +117,6 @@ export const METHODE_LABELS: Record<MethodePaiement, string> = {
   ESPECES: 'Espèces', VIREMENT_BANCAIRE: 'Virement', CHEQUE: 'Chèque',
 };
 
-export const METHODE_ICONS: Record<MethodePaiement, string> = {
-  CARTE_BANCAIRE: '💳', PAYPAL: '🅿️', ESPECES: '💵', VIREMENT_BANCAIRE: '🏦', CHEQUE: '📝',
-};
-
 // ── API calls ──────────────────────────────────────────────────────────────
 
 export const paymentService = {
@@ -128,6 +138,10 @@ export const paymentService = {
   getPaiementsByFacture: (factureId: number) => api.get<Paiement[]>(`/paiements/facture/${factureId}`),
   enregistrerPaiement: (dto: Paiement) => api.post<Paiement>('/paiements', dto),
   rembourserPaiement: (id: number) => api.patch<Paiement>(`/paiements/${id}/rembourser`),
+
+  // Stripe card payment (amount is checked again server-side against the PaymentIntent)
+  createStripeIntent: (factureId: number, montant: number) =>
+    api.post<{ clientSecret: string; paymentIntentId: string }>('/stripe/create-intent', { factureId, montant }),
 
   // Rapports
   getRapport: (debut?: string, fin?: string) => {

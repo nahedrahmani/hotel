@@ -10,9 +10,6 @@ import CreationHebergement from "./hebergement/CreationHebergement.tsx";
 import StockDashboard from "./Stock/StockDashboard.tsx";
 import GestionProduits from "./Stock/GestionProduits.tsx";
 import MouvementsStock from "./Stock/MouvementsStock.tsx";
-import TestStock from "./Stock/TestStock.tsx";
-import TestIntegration from "./Stock/TestIntegration.tsx";
-import DiagnosticServices from "./Stock/DiagnosticServices.tsx";
 import ChambreStockManager from "./Stock/ChambreStockManager.tsx";
 import ReservationsPage from "./reservations/ReservationsPage.tsx";
 import OccupancyPage from "./reservations/OccupancyPage.tsx";
@@ -31,6 +28,7 @@ import TachesPage from "./rh/TachesPage.tsx";
 import CongesPage from "./rh/CongesPage.tsx";
 import FacturesPage from "./payment/FacturesPage.tsx";
 import RapportsPage from "./payment/RapportsPage.tsx";
+import ProfilePage from "./profil/ProfilePage.tsx";
 
 const AccesRefuse: React.FC = () => (
     <div className="container-fluid p-4">
@@ -76,9 +74,6 @@ const Dashboard: React.FC = () => {
                 <Route path="stock" element={<StockDashboard />} />
                 <Route path="stock/produits" element={<GestionProduits />} />
                 <Route path="stock/mouvements" element={<MouvementsStock />} />
-                <Route path="stock/test" element={<TestStock />} />
-                <Route path="stock/test-integration" element={<TestIntegration />} />
-                <Route path="stock/diagnostic" element={<DiagnosticServices />} />
                 <Route path="stock/chambre-manager" element={<ChambreStockManager />} />
                 {/* RH */}
                 <Route path="rh/personnel" element={<PersonnelPage />} />
@@ -89,6 +84,7 @@ const Dashboard: React.FC = () => {
                 {/* Paiement */}
                 <Route path="payment/factures" element={<FacturesPage />} />
                 <Route path="payment/rapports" element={<RapportsPage />} />
+                <Route path="profil" element={<ProfilePage />} />
             </Routes>
         </Layout>
     );

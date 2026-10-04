@@ -5,6 +5,9 @@ import {
   STATUT_CONGE_COLORS,
 } from '../../services/rhService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
+import { apiError } from '../../utils/api';
+import { useConfirm } from '../../components/useConfirm';
+import { formatDate } from '../../utils/format';
 
 const TYPE_LABELS: Record<TypeConge, string> = {
   CONGE_PAYE: 'Congé payé', MALADIE: 'Maladie', MATERNITE_PATERNITE: 'Maternité/Paternité',
@@ -19,6 +22,7 @@ const STATUTS: StatutConge[] = ['EN_ATTENTE', 'APPROUVE', 'REFUSE', 'ANNULE'];
 const EMPTY: Conge = { employeId: 0, typeConge: 'CONGE_PAYE', dateDebut: '', dateFin: '' };
 
 export default function CongesPage() {
+  const [confirm, confirmDialog] = useConfirm();
   // Hide actions the backend refuses for this role (ADMIN/MANAGER only)
   const canManage = hasAnyRole(MANAGEMENT_ROLES);
   const [conges, setConges] = useState<Conge[]>([]);
@@ -60,28 +64,29 @@ export default function CongesPage() {
       setShowModal(false);
       load();
     } catch (e: unknown) {
-      setFormError((e as any)?.response?.data?.message ?? 'Erreur.');
+      setFormError(apiError(e, 'Erreur.'));
     } finally { setSaving(false); }
   };
 
   const handleApprouver = async (id: number) => {
     try { await rhService.approuverConge(id, 'manager'); load(); }
-    catch (e: unknown) { alert((e as any)?.response?.data?.message ?? 'Erreur.'); }
+    catch (e: unknown) { setError(apiError(e, 'Erreur.')); }
   };
 
   const handleRefuser = async (id: number) => {
     try { await rhService.refuserConge(id, 'manager'); load(); }
-    catch (e: unknown) { alert((e as any)?.response?.data?.message ?? 'Erreur.'); }
+    catch (e: unknown) { setError(apiError(e, 'Erreur.')); }
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Supprimer cette demande ?')) return;
+    if (!(await confirm('Supprimer cette demande ?', { danger: true }))) return;
     try { await rhService.deleteConge(id); load(); }
-    catch (e: unknown) { alert((e as any)?.response?.data?.message ?? 'Erreur.'); }
+    catch (e: unknown) { setError(apiError(e, 'Erreur.')); }
   };
 
   return (
     <div className="container-fluid p-4">
+      {confirmDialog}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h2 className="fw-bold mb-0">Congés</h2>
@@ -96,7 +101,7 @@ export default function CongesPage() {
 
       <div className="card border-0 shadow-sm mb-4">
         <div className="card-body d-flex gap-3 flex-wrap">
-          <select className="form-select w-auto" value={filterStatut} onChange={e => setFilterStatut(e.target.value as any)}>
+          <select className="form-select w-auto" value={filterStatut} onChange={e => setFilterStatut(e.target.value as typeof filterStatut)}>
             <option value="">Tous les statuts</option>
             {STATUTS.map(s => <option key={s} value={s}>{STATUT_LABELS[s]}</option>)}
           </select>
@@ -126,8 +131,8 @@ export default function CongesPage() {
                   <tr key={c.id}>
                     <td className="px-4 fw-semibold">{c.employePrenom} {c.employeNom}</td>
                     <td><span className="badge bg-secondary bg-opacity-10 text-dark border">{TYPE_LABELS[c.typeConge]}</span></td>
-                    <td>{c.dateDebut}</td>
-                    <td>{c.dateFin}</td>
+                    <td className="text-nowrap">{formatDate(c.dateDebut)}</td>
+                    <td className="text-nowrap">{formatDate(c.dateFin)}</td>
                     <td className="fw-semibold">{c.nombreJours}j</td>
                     <td className="text-muted small">{c.motif ?? '—'}</td>
                     <td><span className={`badge bg-${STATUT_CONGE_COLORS[c.statut ?? 'EN_ATTENTE']}`}>{STATUT_LABELS[c.statut ?? 'EN_ATTENTE']}</span></td>

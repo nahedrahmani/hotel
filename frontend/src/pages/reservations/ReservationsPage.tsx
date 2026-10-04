@@ -11,7 +11,9 @@ import {
   STATUS_LABELS,
   STATUS_COLORS,
 } from '../../services/reservationService';
-import { chambreService, type Chambre } from '../../services/chambreService';
+import { chambreService, type Chambre, ROOM_TYPE_LABELS } from '../../services/chambreService';
+import { formatDate, formatDT } from '../../utils/format';
+import { apiError } from '../../utils/api';
 import keycloak from '../../config/keycloak';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
 
@@ -174,12 +176,8 @@ const ReservationsPage: React.FC = () => {
       }
       closeModal();
       fetchAll();
-    } catch (e: unknown) {
-      const msg = (e as any)?.response?.data?.message
-        ?? (e as any)?.response?.data
-        ?? (e instanceof Error ? e.message : null)
-        ?? 'Erreur lors de la sauvegarde.';
-      setFormError(String(msg));
+    } catch (e) {
+      setFormError(apiError(e, 'Erreur lors de la sauvegarde.'));
     } finally {
       setSaving(false);
     }
@@ -189,8 +187,8 @@ const ReservationsPage: React.FC = () => {
     try {
       await reservationService.confirm(r.id!);
       fetchAll();
-    } catch (e: any) {
-      alert(e.response?.data?.message ?? 'Impossible de confirmer.');
+    } catch (e) {
+      setError(apiError(e, 'Impossible de confirmer la réservation.'));
     }
   };
 
@@ -202,8 +200,9 @@ const ReservationsPage: React.FC = () => {
       setCancelTarget(null);
       setCancelReason('');
       fetchAll();
-    } catch (e: any) {
-      alert(e.response?.data?.message ?? 'Impossible d\'annuler.');
+    } catch (e) {
+      setCancelTarget(null);
+      setError(apiError(e, 'Impossible d\'annuler la réservation.'));
     }
   };
 
@@ -231,9 +230,8 @@ const ReservationsPage: React.FC = () => {
   };
 
   const chambreLabel = (r: Reservation) => {
-    if (r.chambre) return `${r.chambre.numero} — ${r.chambre.type}`;
-    const c = chambres.find(c => c.id === r.roomId);
-    return c ? `${c.numero} (${c.type})` : `#${r.roomId}`;
+    const c = r.chambre ?? chambres.find(c => c.id === r.roomId);
+    return c ? `${c.numero} · ${ROOM_TYPE_LABELS[c.type] ?? c.type}` : `#${r.roomId}`;
   };
 
   const filtered = useMemo(
@@ -282,13 +280,13 @@ const ReservationsPage: React.FC = () => {
       {/* Filters */}
       <div className="card border-0 shadow-sm mb-4">
         <div className="card-body d-flex gap-3 flex-wrap">
-          <select className="form-select w-auto" value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)}>
+          <select className="form-select w-auto" value={filterStatus} onChange={e => setFilterStatus(e.target.value as ReservationStatus | '')}>
             <option value="">Tous les statuts</option>
             {(Object.keys(STATUS_LABELS) as ReservationStatus[]).map(s => (
               <option key={s} value={s}>{STATUS_LABELS[s]}</option>
             ))}
           </select>
-          <select className="form-select w-auto" value={filterType} onChange={e => setFilterType(e.target.value as any)}>
+          <select className="form-select w-auto" value={filterType} onChange={e => setFilterType(e.target.value as ReservationType | '')}>
             <option value="">Tous les types</option>
             {(Object.keys(TYPE_LABELS) as ReservationType[]).map(t => (
               <option key={t} value={t}>{TYPE_LABELS[t]}</option>
@@ -331,8 +329,8 @@ const ReservationsPage: React.FC = () => {
                       </small>
                     )}
                   </td>
-                  <td className="py-3">{r.checkInDate}</td>
-                  <td className="py-3">{r.checkOutDate}</td>
+                  <td className="py-3 text-nowrap">{formatDate(r.checkInDate)}</td>
+                  <td className="py-3 text-nowrap">{formatDate(r.checkOutDate)}</td>
                   <td className="py-3">{nights(r)}</td>
                   <td className="py-3">
                     <span className="badge bg-secondary bg-opacity-10 text-dark border">
@@ -348,8 +346,8 @@ const ReservationsPage: React.FC = () => {
                     )}
                   </td>
                   <td className="py-3 text-nowrap">
-                    {r.totalPrice ? `${r.totalPrice} DT` : '—'}
-                    {r.depositPaid ? <div className="text-muted small">Acompte: {r.depositPaid} DT</div> : null}
+                    {formatDT(r.totalPrice)}
+                    {r.depositPaid ? <div className="text-muted small">Acompte : {formatDT(r.depositPaid)}</div> : null}
                   </td>
                   <td className="py-3">
                     <div className="d-flex gap-1 flex-wrap">
@@ -425,7 +423,7 @@ const ReservationsPage: React.FC = () => {
                       <option value="">— Sélectionner —</option>
                       {chambres.map(c => (
                         <option key={c.id} value={c.id}>
-                          {c.numero} — {c.type} ({c.prix} DT/nuit) · {c.statut}
+                          {c.numero} · {ROOM_TYPE_LABELS[c.type] ?? c.type} · {formatDT(c.prix)} / nuit
                         </option>
                       ))}
                     </select>

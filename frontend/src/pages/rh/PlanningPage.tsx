@@ -3,6 +3,8 @@ import { Plus, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 import { rhService, type Shift, type Employe, type TypeShift } from '../../services/rhService';
 import { reservationService, type ReservationStats } from '../../services/reservationService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
+import { apiError } from '../../utils/api';
+import { useConfirm } from '../../components/useConfirm';
 
 const TYPE_COLORS: Record<TypeShift, string> = {
   MATIN: 'warning', APRES_MIDI: 'primary', NUIT: 'dark', JOURNEE_COMPLETE: 'success',
@@ -26,6 +28,7 @@ function getWeekDates(base: Date): Date[] {
 function fmt(d: Date) { return d.toISOString().split('T')[0]; }
 
 export default function PlanningPage() {
+  const [confirm, confirmDialog] = useConfirm();
   // Hide actions the backend refuses for this role (ADMIN/MANAGER only)
   const canManage = hasAnyRole(MANAGEMENT_ROLES);
   const [weekBase, setWeekBase] = useState(new Date());
@@ -76,14 +79,14 @@ export default function PlanningPage() {
       setShowModal(false);
       load();
     } catch (e: unknown) {
-      setFormError((e as any)?.response?.data?.message ?? 'Erreur lors de la sauvegarde.');
+      setFormError(apiError(e, 'Erreur lors de la sauvegarde.'));
     } finally { setSaving(false); }
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Supprimer ce shift ?')) return;
+    if (!(await confirm('Supprimer ce shift ?', { danger: true }))) return;
     try { await rhService.deleteShift(id); load(); }
-    catch { alert('Erreur lors de la suppression.'); }
+    catch { setError('Erreur lors de la suppression.'); }
   };
 
   const DAY_NAMES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -93,6 +96,7 @@ export default function PlanningPage() {
 
   return (
     <div className="container-fluid p-4">
+      {confirmDialog}
       {occupancyStats && (
         <div className="row g-3 mb-4">
           <div className="col-6 col-lg-3">

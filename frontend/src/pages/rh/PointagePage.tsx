@@ -5,6 +5,7 @@ import {
   STATUT_POINTAGE_COLORS,
 } from '../../services/rhService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
+import { apiError } from '../../utils/api';
 
 const today = () => new Date().toISOString().split('T')[0];
 
@@ -51,12 +52,12 @@ export default function PointagePage() {
 
   const handleEntree = async (employeId: number) => {
     try { await rhService.pointageEntree(employeId); load(); }
-    catch (e: unknown) { alert((e as any)?.response?.data?.message ?? 'Erreur pointage entrée.'); }
+    catch (e: unknown) { setError(apiError(e, 'Erreur pointage entrée.')); }
   };
 
   const handleSortie = async (employeId: number) => {
     try { await rhService.pointageSortie(employeId); load(); }
-    catch (e: unknown) { alert((e as any)?.response?.data?.message ?? 'Erreur pointage sortie.'); }
+    catch (e: unknown) { setError(apiError(e, 'Erreur pointage sortie.')); }
   };
 
   const handleCreate = async () => {
@@ -67,7 +68,7 @@ export default function PointagePage() {
       setShowModal(false);
       load();
     } catch (e: unknown) {
-      setFormError((e as any)?.response?.data?.message ?? 'Erreur.');
+      setFormError(apiError(e, 'Erreur.'));
     } finally { setSaving(false); }
   };
 

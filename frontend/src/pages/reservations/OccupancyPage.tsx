@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, BedDouble, LogIn, LogOut, BarChart2 } from 'lucide-react';
 import { reservationService, type Reservation, STATUS_LABELS, STATUS_COLORS } from '../../services/reservationService';
 import { chambreService, type Chambre } from '../../services/chambreService';
+import { formatDT } from '../../utils/format';
 
 type RoomOccupancy = {
   chambre: Chambre;
@@ -167,7 +168,7 @@ const OccupancyPage: React.FC = () => {
                     <td className="px-4 py-3 fw-semibold">{chambre.numero}</td>
                     <td className="py-3">{chambre.type}</td>
                     <td className="py-3">{chambre.etage ?? '—'}</td>
-                    <td className="py-3">{chambre.prix} DT</td>
+                    <td className="py-3">{formatDT(chambre.prix)}</td>
                     <td className="py-3">
                       {reservation ? (
                         <span className="d-flex align-items-center gap-1">

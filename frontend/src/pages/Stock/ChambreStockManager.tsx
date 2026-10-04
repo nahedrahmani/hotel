@@ -1,185 +1,129 @@
-import { useState, useEffect } from 'react';
-import axios from 'axios';
-import keycloak from '../../config/keycloak';
-import { chambreService, type Chambre } from '../../services/chambreService';
+import { useEffect, useState } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
+import { chambreService, type Chambre, ROOM_TYPE_LABELS } from '../../services/chambreService';
+import { stockService, type Produit, CATEGORIE_LABELS } from '../../services/stockService';
+import { apiError } from '../../utils/api';
+import { formatDT } from '../../utils/format';
+import StockTabs from './StockTabs';
 
-const STOCK_API = `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/chambre/stock`;
-const auth = () => ({ headers: { Authorization: `Bearer ${keycloak.token}` } });
+type ProduitChambre = { id: number; nom: string; categorie?: string; prixUnitaire: number };
 
-type Produit = { id: number; nom: string; categorie: string; prixUnitaire: number };
-type Stats   = { totalProduits?: number; categories?: number; valeurTotale?: number };
-
+/** Products placed in each room (minibar, amenities); they are billed at checkout. */
 export default function ChambreStockManager() {
-  const [produits, setProduits]           = useState<Produit[]>([]);
-  const [stats, setStats]                 = useState<Stats>({});
-  const [chambres, setChambres]           = useState<Chambre[]>([]);
-  const [selectedChambreId, setSelectedChambreId] = useState<number | ''>('');
-  const [loading, setLoading]             = useState(false);
-  const [loadError, setLoadError]         = useState('');
-  const [notification, setNotification]   = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
-
-  const notify = (message: string, type: 'success' | 'error') => {
-    setNotification({ show: true, message, type });
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 3000);
-  };
+  const [chambres, setChambres]   = useState<Chambre[]>([]);
+  const [produits, setProduits]   = useState<Produit[]>([]);
+  const [chambreId, setChambreId] = useState<number | ''>('');
+  const [contenu, setContenu]     = useState<ProduitChambre[]>([]);
+  const [aAjouter, setAAjouter]   = useState<number | ''>('');
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState('');
 
   useEffect(() => {
-    loadData();
-    chambreService.getAllChambres().then(r => setChambres(r.data)).catch(() => {});
+    chambreService.getAllChambres().then(r => setChambres(r.data)).catch(e => setError(apiError(e, 'Impossible de charger les chambres.')));
+    stockService.getAllProduits().then(r => setProduits(r.data)).catch(e => setError(apiError(e, 'Impossible de charger les produits.')));
   }, []);
 
-  const loadData = async () => {
+  const loadContenu = async (id: number) => {
     setLoading(true);
-    setLoadError('');
-    try {
-      const [produitsRes, statsRes] = await Promise.all([
-        axios.get<Produit[]>(`${STOCK_API}/disponibles`, auth()),
-        axios.get<Stats>(`${STOCK_API}/stats`, auth()),
-      ]);
-      setProduits(produitsRes.data);
-      setStats(statsRes.data);
-    } catch {
-      setLoadError('Impossible de charger les produits. Vérifiez que le service stock est disponible.');
-    } finally {
-      setLoading(false);
-    }
+    try { setContenu((await chambreService.getProduitsByChambre(id)).data); }
+    catch (e) { setError(apiError(e, 'Impossible de charger le contenu de la chambre.')); }
+    finally { setLoading(false); }
   };
 
-  const assignProduit = async (produitId: number) => {
-    if (!selectedChambreId) {
-      notify('Veuillez sélectionner une chambre d\'abord.', 'error');
-      return;
-    }
-    try {
-      await axios.post(`${STOCK_API}/assign`, {
-        chambreId: selectedChambreId,
-        produitId,
-        quantite: 1,
-      }, auth());
-      notify('Produit assigné avec succès', 'success');
-      loadData();
-    } catch {
-      notify('Erreur lors de l\'assignation', 'error');
-    }
+  const selectChambre = (id: number | '') => {
+    setChambreId(id);
+    setAAjouter('');
+    setError('');
+    if (id) loadContenu(id); else setContenu([]);
   };
 
-  const selectedChambre = chambres.find(c => c.id === selectedChambreId);
+  const run = async (action: () => Promise<unknown>, fallback: string) => {
+    if (!chambreId) return;
+    setError('');
+    try { await action(); await loadContenu(chambreId); }
+    catch (e) { setError(apiError(e, fallback)); }
+  };
+
+  const disponibles = produits.filter(p => !contenu.some(c => c.id === p.id));
+  const chambre = chambres.find(c => c.id === chambreId);
 
   return (
-    <div style={{ background: '#f8f9fa', minHeight: '100vh', padding: '40px 20px', position: 'relative' }}>
+    <div className="container-fluid p-4">
+      <h2 className="fw-bold mb-3">Stock</h2>
+      <StockTabs />
+      {error && <div className="alert alert-danger py-2">{error}</div>}
 
-      {notification.show && (
-        <div style={{
-          position: 'fixed', top: 20, right: 20, zIndex: 9999,
-          background: notification.type === 'success'
-            ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-            : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-          color: 'white', padding: '16px 24px', borderRadius: 12,
-          boxShadow: '0 10px 25px rgba(0,0,0,0.2)', minWidth: 300,
-          display: 'flex', alignItems: 'center', gap: 12,
-        }}>
-          <strong>{notification.type === 'success' ? 'Succès' : 'Erreur'}</strong>
-          {notification.message}
-        </div>
-      )}
-
-      <style>{`@keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
-
-      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-        {loadError && (
-          <div className="alert alert-danger mb-4">{loadError}</div>
-        )}
-
-        {/* Header */}
-        <div style={{ background: 'white', borderRadius: 12, padding: 30, marginBottom: 30, border: '1px solid #e5e7eb' }}>
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: '#1f2937', marginBottom: 8 }}>
-            Gestion Dynamique Stock-Chambre
-          </h1>
-          <p style={{ margin: 0, color: '#6b7280' }}>Assignation des produits aux chambres</p>
-        </div>
-
-        {/* Room selector */}
-        <div style={{ background: 'white', borderRadius: 12, padding: 24, marginBottom: 30, border: '1px solid #e5e7eb' }}>
-          <label style={{ fontWeight: 600, display: 'block', marginBottom: 8, color: '#374151' }}>
-            Chambre cible *
-          </label>
-          <select
-            className="form-select"
-            style={{ maxWidth: 400 }}
-            value={selectedChambreId}
-            onChange={e => setSelectedChambreId(e.target.value ? Number(e.target.value) : '')}
-          >
-            <option value="">— Sélectionner une chambre —</option>
-            {chambres.map(c => (
-              <option key={c.id} value={c.id}>
-                Chambre {c.numero} — {c.type}{c.etage != null ? ` (Étage ${c.etage})` : ''}
-              </option>
-            ))}
-          </select>
-          {selectedChambre && (
-            <p className="text-muted small mt-2 mb-0">
-              Statut : {selectedChambre.statut} · Capacité : {selectedChambre.capacite} pers. · {selectedChambre.prix} DT/nuit
-            </p>
+      <div className="card border-0 shadow-sm mb-4">
+        <div className="card-body d-flex flex-wrap align-items-end gap-3">
+          <div style={{ minWidth: 280 }}>
+            <label className="form-label fw-semibold small" htmlFor="sc-chambre">Chambre</label>
+            <select id="sc-chambre" className="form-select" value={chambreId}
+              onChange={e => selectChambre(e.target.value ? Number(e.target.value) : '')}>
+              <option value="">— Choisir une chambre —</option>
+              {chambres.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.numero} · {ROOM_TYPE_LABELS[c.type] ?? c.type}{c.etage != null ? ` · étage ${c.etage}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          {chambreId && (
+            <>
+              <div style={{ minWidth: 280 }}>
+                <label className="form-label fw-semibold small" htmlFor="sc-produit">Ajouter un produit</label>
+                <select id="sc-produit" className="form-select" value={aAjouter}
+                  onChange={e => setAAjouter(e.target.value ? Number(e.target.value) : '')}>
+                  <option value="">— Choisir un produit —</option>
+                  {disponibles.map(p => <option key={p.id} value={p.id}>{p.nom} · {formatDT(p.prixUnitaire)}</option>)}
+                </select>
+              </div>
+              <button className="btn btn-dark d-flex align-items-center gap-2" disabled={!aAjouter}
+                onClick={() => run(async () => { await chambreService.addProduitToChambre(chambreId, Number(aAjouter)); setAAjouter(''); }, 'Le produit n\'a pas pu être ajouté.')}>
+                <Plus size={16} /> Ajouter
+              </button>
+            </>
           )}
         </div>
-
-        {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20, marginBottom: 30 }}>
-          {[
-            { icon: 'fa-box', color: '#3b82f6', value: stats.totalProduits ?? 0, label: 'Produits Disponibles' },
-            { icon: 'fa-tags', color: '#10b981', value: stats.categories ?? 0, label: 'Catégories' },
-            { icon: 'fa-dollar-sign', color: '#f59e0b', value: `${(stats.valeurTotale ?? 0).toFixed(2)} DT`, label: 'Valeur Totale' },
-          ].map(({ icon, color, value, label }) => (
-            <div key={label} style={{ background: 'white', borderRadius: 12, padding: 25, border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 15 }}>
-              <div style={{ width: 50, height: 50, background: color, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <i className={`fas ${icon}`} style={{ color: 'white', fontSize: 22 }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#1f2937' }}>{value}</div>
-                <div style={{ fontSize: 14, color: '#6b7280' }}>{label}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Products */}
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 60, background: 'white', borderRadius: 12, border: '1px solid #e5e7eb' }}>
-            <i className="fas fa-spinner fa-spin" style={{ fontSize: 48, color: '#3b82f6', marginBottom: 16 }} />
-            <p style={{ color: '#6b7280' }}>Chargement des produits…</p>
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
-            {produits.map(p => (
-              <div key={p.id} style={{ background: 'white', borderRadius: 12, padding: 25, border: '1px solid #e5e7eb' }}>
-                <div style={{ marginBottom: 12 }}>
-                  <h5 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: '#1f2937', marginBottom: 6 }}>{p.nom}</h5>
-                  <span style={{ padding: '3px 10px', background: '#e0e7ff', color: '#4f46e5', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>{p.categorie}</span>
-                </div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: '#10b981', marginBottom: 16 }}>{p.prixUnitaire} DT</div>
-                <button
-                  onClick={() => assignProduit(p.id)}
-                  disabled={!selectedChambreId}
-                  style={{
-                    width: '100%', padding: '11px', border: 'none', borderRadius: 8,
-                    fontSize: 14, fontWeight: 600, cursor: selectedChambreId ? 'pointer' : 'not-allowed',
-                    background: selectedChambreId ? '#3b82f6' : '#e5e7eb',
-                    color: selectedChambreId ? 'white' : '#9ca3af',
-                  }}
-                >
-                  <i className="fas fa-plus-circle" style={{ marginRight: 8 }} />
-                  {selectedChambreId ? `Assigner à ${selectedChambre?.numero ?? '…'}` : 'Sélectionner une chambre'}
-                </button>
-              </div>
-            ))}
-            {produits.length === 0 && (
-              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 60, background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', color: '#9ca3af' }}>
-                Aucun produit disponible
-              </div>
-            )}
-          </div>
-        )}
       </div>
+
+      {chambreId && (
+        <div className="card border-0 shadow-sm">
+          <div className="card-body border-bottom">
+            <h5 className="fw-bold mb-0">Contenu de la chambre {chambre?.numero}</h5>
+          </div>
+          <div className="table-responsive">
+            <table className="table table-hover align-middle mb-0">
+              <thead className="border-bottom">
+                <tr>
+                  <th className="px-4 py-3">Produit</th>
+                  <th className="py-3">Catégorie</th>
+                  <th className="py-3">Prix facturé</th>
+                  <th className="py-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={4} className="text-center py-4"><div className="spinner-border spinner-border-sm" /></td></tr>
+                ) : contenu.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center text-muted py-4">Aucun produit dans cette chambre</td></tr>
+                ) : contenu.map(p => (
+                  <tr key={p.id}>
+                    <td className="px-4 py-3 fw-semibold">{p.nom}</td>
+                    <td className="py-3 text-muted">{p.categorie ? CATEGORIE_LABELS[p.categorie] ?? p.categorie : '—'}</td>
+                    <td className="py-3">{formatDT(p.prixUnitaire)}</td>
+                    <td className="py-3 text-end pe-4">
+                      <button className="btn btn-sm btn-outline-danger" title="Retirer de la chambre"
+                        onClick={() => run(() => chambreService.removeProduitFromChambre(chambreId, p.id), 'Le produit n\'a pas pu être retiré.')}>
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

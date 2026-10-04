@@ -1,13 +1,9 @@
 import axios from 'axios';
-import keycloak from '../config/keycloak';
+import { withAuth } from './http';
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080') + '/api/rh';
-const api = axios.create({ baseURL: BASE });
-
-api.interceptors.request.use(config => {
-  if (keycloak.token) config.headers.Authorization = `Bearer ${keycloak.token}`;
-  return config;
-});
+// Token attached and refreshed by the shared interceptor
+const api = withAuth(axios.create({ baseURL: BASE }));
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

@@ -6,7 +6,7 @@ export const MANAGEMENT_ROLES = ['ADMIN', 'MANAGER'];
 
 /**
  * Roles allowed on each /dashboard page, keyed by sub-path. The longest matching
- * prefix wins (so "stock/test" overrides "stock"). Pages not listed are open to
+ * prefix wins (so "payment/rapports" overrides a broader entry). Pages not listed are open to
  * any logged-in user (booking, own reservations, messages, listings).
  */
 const PAGE_ROLES: Record<string, string[]> = {
@@ -24,10 +24,6 @@ const PAGE_ROLES: Record<string, string[]> = {
   rh: STAFF_ROLES,
   tasks: STAFF_ROLES,
   stock: STAFF_ROLES,
-  // Developer diagnostics, not part of the hotel workflow
-  'stock/test': ['ADMIN'],
-  'stock/test-integration': ['ADMIN'],
-  'stock/diagnostic': ['ADMIN'],
 };
 
 export const userRoles = (): string[] => keycloak.tokenParsed?.realm_access?.roles ?? [];

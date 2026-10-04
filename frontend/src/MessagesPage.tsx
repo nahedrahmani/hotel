@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, Plus, MessageSquare, X } from 'lucide-react';
 import { Client, type IMessage } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
-import axios from 'axios';
+import { http } from './services/http';
 import keycloak from './config/keycloak';
 
 // ── Types matching backend entities ──────────────────────────────────────────
@@ -37,7 +37,6 @@ const WS_URL  = `${GATEWAY}/ws-chat`;   // routed through gateway → chambre-se
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const authHeader = () => ({ headers: { Authorization: `Bearer ${keycloak.token}` } });
 
 /** Deterministic hue from a string so every user has a consistent colour */
 const hashHue = (s: string) =>
@@ -97,14 +96,14 @@ export const MessagesPage: React.FC = () => {
   const loadChats = useCallback(async () => {
     if (!currentUserId) return;
     try {
-      const res = await axios.get<Chat[]>(`${GATEWAY}/api/chats/user/${currentUserId}`, authHeader());
+      const res = await http.get<Chat[]>(`${GATEWAY}/api/chats/user/${currentUserId}`);
       setChats(res.data);
     } catch { /* silent — shown via connection status */ }
   }, [currentUserId]);
 
   const loadMessages = useCallback(async (chatId: string) => {
     try {
-      const res = await axios.get<ChatMessage[]>(`${GATEWAY}/api/chats/${chatId}/messages`, authHeader());
+      const res = await http.get<ChatMessage[]>(`${GATEWAY}/api/chats/${chatId}/messages`);
       setMessages([...res.data].reverse()); // API returns DESC; display ASC
     } catch { /* silent */ }
   }, []);
@@ -198,10 +197,9 @@ export const MessagesPage: React.FC = () => {
 
     setCreating(true); setCreateError('');
     try {
-      const res = await axios.post<Chat>(
+      const res = await http.post<Chat>(
         `${GATEWAY}/api/chats/create?senderId=${encodeURIComponent(currentUserId)}&recipientId=${encodeURIComponent(target)}`,
         null,
-        authHeader(),
       );
       setChats(prev => prev.find(c => c.id === res.data.id) ? prev : [res.data, ...prev]);
       setSelectedChat(res.data);

@@ -4,7 +4,8 @@ import { clientService, type CheckInRecord } from '../../services/clientService'
 import { reservationService, type Reservation, STATUS_LABELS, STATUS_COLORS } from '../../services/reservationService';
 import { chambreService } from '../../services/chambreService';
 import keycloak from '../../config/keycloak';
-import axios from 'axios';
+import { apiError } from '../../utils/api';
+import { formatDate, formatDT } from '../../utils/format';
 
 type ConsoItem = { produitId: number; nom: string; quantite: number; prixUnitaire: number };
 
@@ -28,6 +29,7 @@ const CheckInOutPage: React.FC = () => {
   const [, setRoomProduits] = useState<{ id: number; nom: string; prixUnitaire: number }[]>([]);
   const [conso, setConso]               = useState<ConsoItem[]>([]);
   const [savingConso, setSavingConso]   = useState(false);
+  const [consoResult, setConsoResult]   = useState<{ ok: boolean; text: string } | null>(null);
 
   const search = async () => {
     if (!reservationId.trim()) return;
@@ -57,8 +59,8 @@ const CheckInOutPage: React.FC = () => {
         : await clientService.checkOut(reservation.id!, keycloakId, notes || undefined);
       setResult(r.data);
       setStep('done');
-    } catch (e: any) {
-      setError(e.response?.data?.message ?? e.response?.data ?? 'Opération impossible. Vérifiez le statut de la réservation.');
+    } catch (e) {
+      setError(apiError(e, 'Opération impossible. Vérifiez le statut de la réservation.'));
     } finally {
       setProcessing(false);
     }
@@ -74,7 +76,7 @@ const CheckInOutPage: React.FC = () => {
   // Load room's assigned products when a checkout reservation is found
   useEffect(() => {
     if (mode !== 'CHECKOUT' || !reservation?.roomId) { setRoomProduits([]); setConso([]); return; }
-    chambreService.getProduitsByChambre(reservation.roomId).then((res: any) => {
+    chambreService.getProduitsByChambre(reservation.roomId).then(res => {
       const produits = (res.data ?? []) as { id: number; nom: string; prixUnitaire: number }[];
       setRoomProduits(produits);
       // Pre-fill one entry per room product with quantity 0
@@ -90,16 +92,16 @@ const CheckInOutPage: React.FC = () => {
     const toRecord = conso.filter(c => c.quantite > 0);
     if (toRecord.length === 0) return;
     setSavingConso(true);
-    const auth = { headers: { Authorization: `Bearer ${keycloak.token}` } };
+    setConsoResult(null);
     try {
       await Promise.all(toRecord.map(c =>
-        axios.post(`${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/checkinout/conso/${result.reservationId}`,
-          { chambreId: result.chambreId, produitId: c.produitId, quantite: c.quantite }, auth)
+        clientService.addConso(result.reservationId!, { chambreId: result.chambreId, produitId: c.produitId, quantite: c.quantite })
       ));
       setConso(prev => prev.map(c => ({ ...c, quantite: 0 })));
-      alert(`${toRecord.length} consommation${toRecord.length > 1 ? 's' : ''} enregistrée${toRecord.length > 1 ? 's' : ''}.`);
-    } catch {
-      alert('Erreur lors de l\'enregistrement des consommations.');
+      const n = toRecord.length;
+      setConsoResult({ ok: true, text: `${n} consommation${n > 1 ? 's' : ''} enregistrée${n > 1 ? 's' : ''}.` });
+    } catch (e) {
+      setConsoResult({ ok: false, text: apiError(e, 'Les consommations n\'ont pas pu être enregistrées.') });
     } finally {
       setSavingConso(false);
     }
@@ -198,11 +200,11 @@ const CheckInOutPage: React.FC = () => {
                     </div>
                     <div className="col-6">
                       <small className="text-muted d-block">Arrivée prévue</small>
-                      <strong>{reservation.checkInDate}</strong>
+                      <strong>{formatDate(reservation.checkInDate)}</strong>
                     </div>
                     <div className="col-6">
                       <small className="text-muted d-block">Départ prévu</small>
-                      <strong>{reservation.checkOutDate}</strong>
+                      <strong>{formatDate(reservation.checkOutDate)}</strong>
                     </div>
                   </div>
                 </div>
@@ -303,7 +305,7 @@ const CheckInOutPage: React.FC = () => {
                     {conso.map(c => (
                       <div key={c.produitId} className="d-flex align-items-center gap-3 mb-2">
                         <span className="flex-grow-1 small">{c.nom}</span>
-                        <span className="text-muted small text-nowrap">{c.prixUnitaire} DT/u</span>
+                        <span className="text-muted small text-nowrap">{formatDT(c.prixUnitaire)} / u</span>
                         <div className="input-group" style={{ width: 110 }}>
                           <button className="btn btn-sm btn-outline-secondary px-2"
                             onClick={() => updateConsoQty(c.produitId, c.quantite - 1)}>−</button>
@@ -314,13 +316,13 @@ const CheckInOutPage: React.FC = () => {
                             onClick={() => updateConsoQty(c.produitId, c.quantite + 1)}>+</button>
                         </div>
                         <span className="text-nowrap small fw-semibold" style={{ minWidth: 60, textAlign: 'right' }}>
-                          {(c.quantite * c.prixUnitaire).toFixed(2)} DT
+                          {formatDT(c.quantite * c.prixUnitaire)}
                         </span>
                       </div>
                     ))}
                     <div className="border-top pt-3 mt-3 d-flex justify-content-between align-items-center">
                       <span className="fw-bold">
-                        Total : {conso.reduce((s, c) => s + c.quantite * c.prixUnitaire, 0).toFixed(2)} DT
+                        Total : {formatDT(conso.reduce((s, c) => s + c.quantite * c.prixUnitaire, 0))}
                       </span>
                       <button className="btn btn-dark btn-sm d-flex align-items-center gap-2"
                         onClick={submitConso} disabled={savingConso || conso.every(c => c.quantite === 0)}>
@@ -328,6 +330,9 @@ const CheckInOutPage: React.FC = () => {
                         Enregistrer la consommation
                       </button>
                     </div>
+                    {consoResult && (
+                      <div className={`alert py-2 small mt-3 mb-0 ${consoResult.ok ? 'alert-success' : 'alert-danger'}`}>{consoResult.text}</div>
+                    )}
                   </div>
                 </div>
               )}

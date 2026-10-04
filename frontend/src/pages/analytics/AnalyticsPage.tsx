@@ -3,6 +3,7 @@ import { TrendingUp, BedDouble, DollarSign, BarChart2, RefreshCw } from 'lucide-
 import { reservationService, type ReservationStats } from '../../services/reservationService';
 import { paymentService, type Rapport } from '../../services/paymentService';
 import { chambreService, type Chambre } from '../../services/chambreService';
+import { formatDT } from '../../utils/format';
 
 const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -35,7 +36,7 @@ function HBar({ label, value, max, color = 'primary' }: {
     <div className="mb-3">
       <div className="d-flex justify-content-between mb-1">
         <span className="small text-truncate me-2" style={{ maxWidth: '60%' }}>{label}</span>
-        <span className="small fw-semibold text-nowrap">{value.toLocaleString('fr-FR')} DT</span>
+        <span className="small fw-semibold text-nowrap">{formatDT(value)}</span>
       </div>
       <div className="progress" style={{ height: 8 }}>
         <div className={`progress-bar bg-${color}`} style={{ width: `${pct}%` }} />
@@ -145,7 +146,7 @@ export default function AnalyticsPage() {
           {/* KPI cards */}
           <div className="row g-3 mb-4">
             <div className="col-6 col-lg-3">
-              <KpiCard label="Chiffre d'affaires" value={`${revenue.toLocaleString('fr-FR')} DT`}
+              <KpiCard label="Chiffre d'affaires" value={formatDT(revenue)}
                 icon={<DollarSign size={20} />} color="success"
                 sub={`${rapport?.nombreFactures ?? 0} factures`} />
             </div>
@@ -261,12 +262,12 @@ export default function AnalyticsPage() {
                     <table className="table table-sm">
                       <tbody>
                         {[
-                          ['CA HT', `${rapport.totalHT.toFixed(2)} DT`],
-                          ['TVA collectée', `${rapport.totalTva.toFixed(2)} DT`],
-                          ['CA TTC', `${rapport.chiffreAffaires.toFixed(2)} DT`],
+                          ['CA HT', formatDT(rapport.totalHT)],
+                          ['TVA collectée', formatDT(rapport.totalTva)],
+                          ['CA TTC', formatDT(rapport.chiffreAffaires)],
                           ['Factures payées', rapport.nombrePayees],
                           ['Factures impayées', rapport.nombreImpayees],
-                          ['Montant impayé', `${rapport.montantImpaye.toFixed(2)} DT`],
+                          ['Montant impayé', formatDT(rapport.montantImpaye)],
                           ['En retard', rapport.nombreEnRetard],
                         ].map(([k, v]) => (
                           <tr key={String(k)}>

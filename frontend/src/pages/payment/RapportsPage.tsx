@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, TrendingUp, FileText, AlertCircle, Clock } from 'lucide-react';
-import { paymentService, type Rapport, type MethodePaiement, METHODE_LABELS, METHODE_ICONS } from '../../services/paymentService';
+import { paymentService, type Rapport, type MethodePaiement, METHODE_LABELS } from '../../services/paymentService';
+import MethodeIcon from '../../components/MethodeIcon';
+import { formatDT } from '../../utils/format';
 
 const firstOfMonth = () => {
   const d = new Date();
@@ -63,13 +65,13 @@ export default function RapportsPage() {
           {/* KPI Cards */}
           <div className="row g-3 mb-4">
             <div className="col-6 col-lg-3">
-              <StatCard label="Chiffre d'affaires" value={`${Number(rapport.chiffreAffaires).toFixed(3)} DT`} icon={<TrendingUp size={20} />} color="success" sub={`HT: ${Number(rapport.totalHT).toFixed(3)} DT`} />
+              <StatCard label="Chiffre d'affaires" value={formatDT(Number(rapport.chiffreAffaires))} icon={<TrendingUp size={20} />} color="success" sub={`HT: ${formatDT(Number(rapport.totalHT))}`} />
             </div>
             <div className="col-6 col-lg-3">
-              <StatCard label="TVA collectée" value={`${Number(rapport.totalTva).toFixed(3)} DT`} icon={<FileText size={20} />} color="primary" />
+              <StatCard label="TVA collectée" value={formatDT(Number(rapport.totalTva))} icon={<FileText size={20} />} color="primary" />
             </div>
             <div className="col-6 col-lg-3">
-              <StatCard label="Impayés" value={`${Number(rapport.montantImpaye).toFixed(3)} DT`} icon={<AlertCircle size={20} />} color="danger" sub={`${rapport.nombreImpayees} facture(s)`} />
+              <StatCard label="Impayés" value={formatDT(Number(rapport.montantImpaye))} icon={<AlertCircle size={20} />} color="danger" sub={`${rapport.nombreImpayees} facture(s)`} />
             </div>
             <div className="col-6 col-lg-3">
               <StatCard label="En retard" value={rapport.nombreEnRetard} icon={<Clock size={20} />} color="warning" sub="factures" />
@@ -113,8 +115,8 @@ export default function RapportsPage() {
                     : Object.entries(rapport.revenueParMethode).map(([methode, montant]) => (
                       <div key={methode} className="mb-3">
                         <div className="d-flex justify-content-between mb-1">
-                          <span className="small">{METHODE_ICONS[methode as MethodePaiement]} {METHODE_LABELS[methode as MethodePaiement] ?? methode}</span>
-                          <span className="fw-semibold small">{Number(montant).toFixed(3)} DT</span>
+                          <span className="small d-flex align-items-center gap-2"><MethodeIcon methode={methode as MethodePaiement} size={14} /> {METHODE_LABELS[methode as MethodePaiement] ?? methode}</span>
+                          <span className="fw-semibold small">{formatDT(Number(montant))}</span>
                         </div>
                         <div className="progress" style={{ height: 8 }}>
                           <div className="progress-bar bg-primary" style={{ width: `${(Number(montant) / maxMethode) * 100}%` }} />
@@ -156,7 +158,7 @@ export default function RapportsPage() {
                 {Object.entries(rapport.revenueParType).map(([type, montant]) => (
                   <div key={type} className="col-md-3 col-6">
                     <div className="card border-0 bg-light text-center p-3">
-                      <div className="fw-bold fs-5">{Number(montant).toFixed(3)} DT</div>
+                      <div className="fw-bold fs-5">{formatDT(Number(montant))}</div>
                       <div className="text-muted small">{type}</div>
                     </div>
                   </div>

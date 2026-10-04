@@ -5,6 +5,8 @@ import {
   POSTE_LABELS, DEPT_LABELS, STATUT_EMPLOYE_COLORS,
 } from '../../services/rhService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
+import { apiError } from '../../utils/api';
+import { useConfirm } from '../../components/useConfirm';
 
 const POSTES = Object.keys(POSTE_LABELS) as Poste[];
 const DEPARTEMENTS = Object.keys(DEPT_LABELS) as Departement[];
@@ -17,6 +19,7 @@ const EMPTY: Employe = {
 };
 
 export default function PersonnelPage() {
+  const [confirm, confirmDialog] = useConfirm();
   // Hide actions the backend refuses for this role (ADMIN/MANAGER only)
   const canManage = hasAnyRole(MANAGEMENT_ROLES);
   const isAdmin = hasAnyRole(['ADMIN']);
@@ -69,20 +72,21 @@ export default function PersonnelPage() {
       setShowModal(false);
       load();
     } catch (e: unknown) {
-      setFormError((e as any)?.response?.data?.message ?? 'Erreur lors de la sauvegarde.');
+      setFormError(apiError(e, 'Erreur lors de la sauvegarde.'));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Supprimer cet employé ?')) return;
+    if (!(await confirm('Supprimer cet employé ?', { danger: true }))) return;
     try { await rhService.deleteEmploye(id); load(); }
-    catch { alert('Erreur lors de la suppression.'); }
+    catch { setError('Erreur lors de la suppression.'); }
   };
 
   return (
     <div className="container-fluid p-4">
+      {confirmDialog}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h2 className="fw-bold mb-0">Personnel</h2>
@@ -103,11 +107,11 @@ export default function PersonnelPage() {
             <span className="input-group-text bg-white"><Search size={16} /></span>
             <input className="form-control border-start-0" placeholder="Rechercher..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <select className="form-select w-auto" value={filterDept} onChange={e => setFilterDept(e.target.value as any)}>
+          <select className="form-select w-auto" value={filterDept} onChange={e => setFilterDept(e.target.value as typeof filterDept)}>
             <option value="">Tous les départements</option>
             {DEPARTEMENTS.map(d => <option key={d} value={d}>{DEPT_LABELS[d]}</option>)}
           </select>
-          <select className="form-select w-auto" value={filterStatut} onChange={e => setFilterStatut(e.target.value as any)}>
+          <select className="form-select w-auto" value={filterStatut} onChange={e => setFilterStatut(e.target.value as typeof filterStatut)}>
             <option value="">Tous les statuts</option>
             {STATUTS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
           </select>
@@ -170,7 +174,7 @@ export default function PersonnelPage() {
                     <div key={field} className="col-md-6">
                       <label className="form-label fw-semibold">{label}</label>
                       <input type={field === 'email' ? 'email' : 'text'} className="form-control"
-                        value={(form as any)[field] ?? ''}
+                        value={String(form[field as keyof typeof form] ?? '')}
                         onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))} />
                     </div>
                   ))}
