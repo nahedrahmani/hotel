@@ -16,6 +16,8 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(EntityNotFoundException ex) {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());
@@ -53,8 +55,23 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.FORBIDDEN, "Accès refusé");
     }
 
+    // Deleting a record that others still reference (e.g. an employee with clock-in history)
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleIntegrity(org.springframework.dao.DataIntegrityViolationException ex) {
+        log.warn("Integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        return error(HttpStatus.CONFLICT, "Action impossible : cet élément est encore utilisé ailleurs (historique, réservations…). Désactivez-le plutôt.");
+    }
+
+    // Malformed JSON or an unknown enum value is a client mistake, not a server error
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleUnreadable(org.springframework.http.converter.HttpMessageNotReadableException ex) {
+        return error(HttpStatus.BAD_REQUEST, "Requête invalide : vérifiez les champs envoyés.");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneral(Exception ex) {
+        // The client only gets a generic message, so the cause must be in the logs
+        log.error("Unhandled error", ex);
         return error(HttpStatus.INTERNAL_SERVER_ERROR, "Une erreur interne s'est produite");
     }
 

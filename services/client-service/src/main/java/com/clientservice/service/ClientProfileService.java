@@ -29,6 +29,10 @@ public class ClientProfileService {
         return profileRepository.findAll();
     }
 
+    public java.util.Optional<ClientProfile> findByKeycloakId(String keycloakId) {
+        return profileRepository.findByKeycloakId(keycloakId);
+    }
+
     public ClientProfile getByKeycloakId(String keycloakId) {
         return profileRepository.findByKeycloakId(keycloakId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found: " + keycloakId));

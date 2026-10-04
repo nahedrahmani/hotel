@@ -34,7 +34,8 @@ public class DemandeController {
     }
 
     @GetMapping("/client/{keycloakId}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    // Guests follow the requests they filed; staff see anyone's
+    @PreAuthorize("#keycloakId == authentication.name or hasAnyRole('ADMIN','MANAGER','STAFF')")
     public List<Demande> getByClient(@PathVariable String keycloakId) {
         return demandeService.getByClient(keycloakId);
     }

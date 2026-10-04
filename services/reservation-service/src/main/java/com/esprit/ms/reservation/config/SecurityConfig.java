@@ -30,8 +30,9 @@ public class SecurityConfig {
                         // Authenticated users can create reservations and view their own
                         .requestMatchers(HttpMethod.POST, "/api/reservations").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/reservations/keycloak/**").authenticated()
-                        // Guests cancel their own bookings; the controller checks ownership
+                        // Guests cancel / see invoices of their own bookings; the controller checks ownership
                         .requestMatchers(HttpMethod.PATCH, "/api/reservations/*/cancel").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/reservations/*/factures").authenticated()
                         // Staff/admin for everything else
                         .anyRequest().hasAnyRole("ADMIN", "MANAGER", "STAFF")
                 )

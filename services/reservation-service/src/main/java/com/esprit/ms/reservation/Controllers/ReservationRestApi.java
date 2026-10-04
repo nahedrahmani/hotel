@@ -95,15 +95,7 @@ public class ReservationRestApi {
                                   @RequestBody(required = false) Map<String, String> body,
                                   @AuthenticationPrincipal Jwt jwt,
                                   Authentication authentication) {
-        // Guests may only cancel their own booking; staff may cancel any
-        boolean staff = authentication.getAuthorities().stream()
-                .anyMatch(a -> List.of("ROLE_ADMIN", "ROLE_MANAGER", "ROLE_STAFF").contains(a.getAuthority()));
-        if (!staff) {
-            ReservationDTO existing = reservationService.getById(id);
-            if (existing == null || jwt == null || !jwt.getSubject().equals(existing.getKeycloakId())) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Vous ne pouvez annuler que vos propres réservations");
-            }
-        }
+        requireOwnerOrStaff(id, jwt, authentication, "Vous ne pouvez annuler que vos propres réservations");
         String reason = body != null ? body.get("reason") : null;
         return reservationService.cancel(id, reason, jwt != null ? jwt.getSubject() : null);
     }
@@ -158,8 +150,23 @@ public class ReservationRestApi {
     }
 
     @GetMapping("/{id}/factures")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
-    public List<PaymentClient.FactureDTO> getFactures(@PathVariable Long id) {
+    @PreAuthorize("isAuthenticated()")
+    public List<PaymentClient.FactureDTO> getFactures(@PathVariable Long id,
+                                                      @AuthenticationPrincipal Jwt jwt,
+                                                      Authentication authentication) {
+        // Guests see the invoices of their own bookings so they can pay them online
+        requireOwnerOrStaff(id, jwt, authentication, "Ces factures ne concernent pas vos réservations");
         return reservationService.getFactures(id);
+    }
+
+    /** Staff act on any booking; anyone else only on a booking made with their own account. */
+    private void requireOwnerOrStaff(Long reservationId, Jwt jwt, Authentication authentication, String refusal) {
+        boolean staff = authentication.getAuthorities().stream()
+                .anyMatch(a -> List.of("ROLE_ADMIN", "ROLE_MANAGER", "ROLE_STAFF").contains(a.getAuthority()));
+        if (staff) return;
+        ReservationDTO existing = reservationService.getById(reservationId);
+        if (existing == null || jwt == null || !jwt.getSubject().equals(existing.getKeycloakId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, refusal);
+        }
     }
 }

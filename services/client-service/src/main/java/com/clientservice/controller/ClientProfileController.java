@@ -32,8 +32,29 @@ public class ClientProfileController {
 
     @GetMapping("/{keycloakId}")
     @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','STAFF'))")
-    public ClientProfile getByKeycloakId(@PathVariable String keycloakId) {
-        return profileService.getByKeycloakId(keycloakId);
+    public ClientProfile getByKeycloakId(@PathVariable String keycloakId, Authentication authentication) {
+        // A guest who never filled in preferences still "has" a profile: an empty one, not a 404
+        if (keycloakId.equals(authentication.getName())) {
+            ClientProfile own = profileService.findByKeycloakId(keycloakId).orElseGet(() -> {
+                ClientProfile empty = new ClientProfile();
+                empty.setKeycloakId(keycloakId);
+                return empty;
+            });
+            if (isFrontDesk(authentication)) return own;
+            ClientProfile view = new ClientProfile();
+            org.springframework.beans.BeanUtils.copyProperties(own, view);
+            view.setNotes(null);
+            return view;
+        }
+        ClientProfile profile = profileService.getByKeycloakId(keycloakId);
+        // Internal staff notes are not shown to the guest. The entity is detached so the copy is not saved.
+        if (!isFrontDesk(authentication)) {
+            ClientProfile view = new ClientProfile();
+            org.springframework.beans.BeanUtils.copyProperties(profile, view);
+            view.setNotes(null);
+            return view;
+        }
+        return profile;
     }
 
     @GetMapping("/{keycloakId}/history")
@@ -52,6 +73,7 @@ public class ClientProfileController {
         if (!isFrontDesk(authentication) || profile.getKeycloakId() == null || profile.getKeycloakId().isBlank()) {
             profile.setKeycloakId(jwt.getSubject());
         }
+        keepStaffNotes(profile, authentication);
         return profileService.createOrUpdate(profile);
     }
 
@@ -67,6 +89,7 @@ public class ClientProfileController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
         profile.setKeycloakId(keycloakId);
+        keepStaffNotes(profile, authentication);
         return profileService.createOrUpdate(profile);
     }
 
@@ -104,6 +127,17 @@ public class ClientProfileController {
             @PathVariable Long docId) {
         profileService.deleteDocument(keycloakId, docId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Notes are the staff's internal remarks about a guest: a guest saving their own
+     * preferences must neither see them overwritten with nothing nor write them.
+     */
+    private void keepStaffNotes(ClientProfile profile, Authentication authentication) {
+        if (isFrontDesk(authentication)) return;
+        String existing = profileService.findByKeycloakId(profile.getKeycloakId())
+                .map(ClientProfile::getNotes).orElse(null);
+        profile.setNotes(existing);
     }
 
     /** Same roles that may already list and read every client profile. */

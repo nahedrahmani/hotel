@@ -34,7 +34,7 @@ export class UserService {
         return user.save();
     }
 
-    async createOrUpdateFromKeycloak(data: any): Promise<User> {
+    async createOrUpdateFromKeycloak(data: { sub: string; preferred_username?: string; given_name?: string; family_name?: string; email?: string }): Promise<User> {
         const update = {
             username: data.preferred_username,
             firstName: data.given_name,
@@ -74,10 +74,18 @@ export class UserService {
         return user;
     }
 
-    async update(keycloakId: string, updateData: SafeUpdateFields): Promise<User> {
-        const updated = await this.userModel.findOneAndUpdate({ keycloakId }, updateData, { new: true }).exec();
+    async update(keycloakId: string, updateData: Record<string, unknown>): Promise<User> {
+        // Copy only editable fields: the body must never set role, keycloakId or links to other records
+        const allowed: (keyof SafeUpdateFields)[] = ['firstName', 'lastName', 'num_tel'];
+        const safe = Object.fromEntries(Object.entries(updateData).filter(([k]) => (allowed as string[]).includes(k)));
+        const updated = await this.userModel.findOneAndUpdate({ keycloakId }, safe, { new: true }).exec();
         if (!updated) throw new NotFoundException('User not found');
         return updated;
+    }
+
+    /** Keeps the local copy in step after the account was changed in Keycloak. */
+    async mirrorAccount(keycloakId: string, account: { firstName: string; lastName: string; email: string }): Promise<void> {
+        await this.userModel.updateOne({ keycloakId }, account).exec();
     }
 
     async remove(keycloakId: string): Promise<void> {
