@@ -372,11 +372,14 @@ public class ReservationService {
         if (reservation.getRoomId() == null) return;
         if (reservation.getStatus() == previousStatus) return;
 
+        // The room's statut is its physical state right now, so only arrivals and departures
+        // change it. Future bookings are handled by the date-based availability check: marking
+        // the room "réservée" on confirmation (or "disponible" on cancellation) would mislabel
+        // a room that another guest is occupying today.
         String newStatut = switch (reservation.getStatus()) {
-            case CONFIRMED   -> "réservée";
             case CHECKED_IN  -> "occupée";
             case CHECKED_OUT -> "à_nettoyer";          // triggers housekeeping workflow
-            case CANCELLED, NO_SHOW -> "disponible";
+            case CANCELLED   -> previousStatus == Reservation.ReservationStatus.CHECKED_IN ? "à_nettoyer" : null;
             default -> null;
         };
 
@@ -432,6 +435,9 @@ public class ReservationService {
         return dto;
     }
 
+    private static final BigDecimal TVA_HEBERGEMENT = BigDecimal.valueOf(19);
+    private static final java.time.format.DateTimeFormatter DATE_FR = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
     private void autoCreateBrouillonFacture(Reservation reservation) {
         try {
             List<PaymentClient.FactureDTO> existing = paymentClient.getFacturesByReservation(reservation.getId());
@@ -450,10 +456,13 @@ public class ReservationService {
 
             if (reservation.getTotalPrice() != null) {
                 PaymentClient.LigneDTO ligne = new PaymentClient.LigneDTO();
-                ligne.setDescription("Séjour du " + reservation.getCheckInDate() + " au " + reservation.getCheckOutDate());
+                ligne.setDescription("Séjour du " + reservation.getCheckInDate().format(DATE_FR) + " au " + reservation.getCheckOutDate().format(DATE_FR));
                 ligne.setQuantite(1);
+                // Room prices are quoted to guests VAT included; payment-service derives HT and
+                // TVA from that amount, so the invoice total is exactly the price the guest saw.
                 ligne.setPrixUnitaire(reservation.getTotalPrice());
-                ligne.setTauxTva(BigDecimal.valueOf(19));
+                ligne.setTauxTva(TVA_HEBERGEMENT);
+                ligne.setPrixTtc(true);
                 facture.setLignes(List.of(ligne));
             } else {
                 facture.setLignes(List.of());   // always non-null — FactureService loops over this

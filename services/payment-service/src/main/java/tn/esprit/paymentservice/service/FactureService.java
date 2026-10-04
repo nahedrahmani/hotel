@@ -83,6 +83,7 @@ public class FactureService {
                         .quantite(ligneDTO.getQuantite())
                         .prixUnitaire(ligneDTO.getPrixUnitaire())
                         .tauxTva(ligneDTO.getTauxTva())
+                        .prixTtc(ligneDTO.getPrixTtc())
                         .build();
                 saved.getLignes().add(ligne);
             }
@@ -113,6 +114,7 @@ public class FactureService {
                         .quantite(ligneDTO.getQuantite())
                         .prixUnitaire(ligneDTO.getPrixUnitaire())
                         .tauxTva(ligneDTO.getTauxTva())
+                        .prixTtc(ligneDTO.getPrixTtc())
                         .build();
                 facture.getLignes().add(ligne);
             }
@@ -185,7 +187,7 @@ public class FactureService {
                 LigneFactureDTO.builder()
                         .id(l.getId()).description(l.getDescription())
                         .quantite(l.getQuantite()).prixUnitaire(l.getPrixUnitaire())
-                        .tauxTva(l.getTauxTva()).montantHT(l.getMontantHT())
+                        .tauxTva(l.getTauxTva()).prixTtc(l.getPrixTtc()).montantHT(l.getMontantHT())
                         .montantTva(l.getMontantTva()).montantTTC(l.getMontantTTC())
                         .build()
         ).collect(Collectors.toList());

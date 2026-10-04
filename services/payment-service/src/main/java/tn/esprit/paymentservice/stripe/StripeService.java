@@ -31,8 +31,24 @@ public class StripeService {
     @Value("${stripe.webhook-secret}")
     private String webhookSecret;
 
-    @Value("${stripe.currency:eur}")
+    // Invoices are in Tunisian dinars, so the charge must be too
+    @Value("${stripe.currency:tnd}")
     private String currency;
+
+    // Stripe amounts are in the currency's smallest unit; the dinar has 1000 millimes
+    private static final java.util.Set<String> THREE_DECIMALS = java.util.Set.of("bhd", "jod", "kwd", "omr", "tnd");
+    private static final java.util.Set<String> ZERO_DECIMALS = java.util.Set.of(
+            "bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf", "ugx", "vnd", "vuv", "xaf", "xof", "xpf");
+
+    private long unitsPerMajor() {
+        String c = currency.toLowerCase();
+        return THREE_DECIMALS.contains(c) ? 1000 : ZERO_DECIMALS.contains(c) ? 1 : 100;
+    }
+
+    /** False while the secret key is still the placeholder from .env.example. */
+    public boolean isConfigured() {
+        return secretKey != null && secretKey.startsWith("sk_") && !secretKey.contains("REPLACE");
+    }
 
     private final FactureRepository factureRepository;
     private final PaiementService paiementService;
@@ -49,16 +65,19 @@ public class StripeService {
     }
 
     public CreateIntentResponse createPaymentIntent(Long factureId, BigDecimal montant) throws StripeException {
+        if (!isConfigured()) {
+            throw new IllegalStateException("Le paiement en ligne n'est pas encore activé. Réglez à la réception.");
+        }
         var facture = factureRepository.findById(factureId)
                 .orElseThrow(() -> new IllegalArgumentException("Facture introuvable: " + factureId));
 
-        // Stripe uses smallest currency unit (cents for EUR, pence for GBP, etc.)
-        // EUR: multiply by 100 → 150.00 EUR = 15000 cents
-        long amountInCents = montant.multiply(BigDecimal.valueOf(100))
+        long amount = montant.multiply(BigDecimal.valueOf(unitsPerMajor()))
                 .setScale(0, RoundingMode.HALF_UP).longValue();
+        // Stripe requires three-decimal currency amounts to end in 0 (no single-millime charges)
+        if (unitsPerMajor() == 1000) amount = Math.round(amount / 10.0) * 10;
 
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-                .setAmount(amountInCents)
+                .setAmount(amount)
                 .setCurrency(currency)
                 .setDescription("Facture " + facture.getNumero() + " — " + facture.getClientNom())
                 .putMetadata("factureId", factureId.toString())
@@ -142,8 +161,7 @@ public class StripeService {
     private PaiementDTO toPaiement(PaymentIntent intent, String note) {
         PaiementDTO dto = new PaiementDTO();
         dto.setFactureId(Long.parseLong(intent.getMetadata().get("factureId")));
-        // Convert from cents back to DT
-        dto.setMontant(BigDecimal.valueOf(intent.getAmount()).divide(BigDecimal.valueOf(100), 3, RoundingMode.HALF_UP));
+        dto.setMontant(BigDecimal.valueOf(intent.getAmount()).divide(BigDecimal.valueOf(unitsPerMajor()), 3, RoundingMode.HALF_UP));
         dto.setMethodePaiement(MethodePaiement.CARTE_BANCAIRE);
         dto.setReference(intent.getId());
         dto.setNote(note);

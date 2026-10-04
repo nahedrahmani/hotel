@@ -50,5 +50,7 @@ public interface PaymentClient {
         private Integer quantite;
         private BigDecimal prixUnitaire;
         private BigDecimal tauxTva;
+        /** prixUnitaire includes VAT — room prices are quoted to guests TTC */
+        private Boolean prixTtc;
     }
 }

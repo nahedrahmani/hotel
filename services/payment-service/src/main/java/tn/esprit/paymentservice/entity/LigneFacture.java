@@ -37,16 +37,35 @@ public class LigneFacture {
     @Builder.Default
     private BigDecimal tauxTva = BigDecimal.valueOf(19);
 
-    public BigDecimal getMontantHT() {
+    /**
+     * True when prixUnitaire already includes VAT (consumer prices, e.g. a hotel stay).
+     * The line total is then exactly the quoted price and HT/TVA are derived from it;
+     * otherwise prixUnitaire is HT and VAT is added on top. Null on older rows = HT.
+     */
+    private Boolean prixTtc;
+
+    private boolean isPrixTtc() {
+        return Boolean.TRUE.equals(prixTtc);
+    }
+
+    private BigDecimal montantSaisi() {
         if (prixUnitaire == null || quantite == null) return BigDecimal.ZERO;
         return prixUnitaire.multiply(BigDecimal.valueOf(quantite)).setScale(3, RoundingMode.HALF_UP);
     }
 
+    public BigDecimal getMontantHT() {
+        if (!isPrixTtc()) return montantSaisi();
+        return montantSaisi().multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(100).add(tauxTva), 3, RoundingMode.HALF_UP);
+    }
+
     public BigDecimal getMontantTva() {
+        if (isPrixTtc()) return montantSaisi().subtract(getMontantHT());
         return getMontantHT().multiply(tauxTva).divide(BigDecimal.valueOf(100), 3, RoundingMode.HALF_UP);
     }
 
     public BigDecimal getMontantTTC() {
+        if (isPrixTtc()) return montantSaisi();
         return getMontantHT().add(getMontantTva()).setScale(3, RoundingMode.HALF_UP);
     }
 }

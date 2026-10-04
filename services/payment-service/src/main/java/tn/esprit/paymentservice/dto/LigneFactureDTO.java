@@ -26,6 +26,9 @@ public class LigneFactureDTO {
     @Builder.Default
     private BigDecimal tauxTva = BigDecimal.valueOf(19);
 
+    /** prixUnitaire includes VAT (see LigneFacture#prixTtc). */
+    private Boolean prixTtc;
+
     private BigDecimal montantHT;
     private BigDecimal montantTva;
     private BigDecimal montantTTC;
