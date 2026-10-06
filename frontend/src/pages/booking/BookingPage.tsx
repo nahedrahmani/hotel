@@ -5,13 +5,13 @@ import { chambreService, type Chambre, ROOM_TYPE_LABELS, roomPhoto } from '../..
 import { reservationService } from '../../services/reservationService';
 import keycloak from '../../config/keycloak';
 import { apiError } from '../../utils/api';
-import { countNights, formatDT, formatStay, nightsLabel } from '../../utils/format';
+import { countNights, formatDT, formatStay, isoDate, nightsLabel } from '../../utils/format';
 
 type Step = 'search' | 'rooms' | 'confirm' | 'done';
 
 const isoDay = (offset = 0) => {
   const d = new Date(); d.setDate(d.getDate() + offset);
-  return d.toISOString().split('T')[0];
+  return isoDate(d);
 };
 
 /** Rooms a guest would see as the same offer: same type, price and view. */

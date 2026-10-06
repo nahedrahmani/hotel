@@ -9,7 +9,10 @@ name: hotel
 # variables redirect them to the other containers by service name.
 
 x-spring-env: &spring-env
-  SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+  # Required, not optional: a service that starts before the config server would run without
+  # its config (the gateway with no routes, H2 without credentials). It exits instead and
+  # Docker restarts it until the config server answers.
+  SPRING_CONFIG_IMPORT: configserver:http://config-server:8888
   # JSON keeps the case of "defaultZone" (a plain env var would lowercase it).
   # preferIpAddress makes services register their container IP, not "localhost".
   SPRING_APPLICATION_JSON: '{"eureka":{"client":{"serviceUrl":{"defaultZone":"http://discovery-service:8889/eureka/"}},"instance":{"preferIpAddress":true}}}'
@@ -18,6 +21,8 @@ x-spring-env: &spring-env
   SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUERURI: http://localhost:9999/realms/hotel
   SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://keycloak:8080/realms/hotel/protocol/openid-connect/certs
   MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+  # The hotel's clock: "today", check-in times and clock-ins are in Tunisian time, not UTC
+  JAVA_TOOL_OPTIONS: -Duser.timezone=Africa/Tunis
 
 x-cloudinary-env: &cloudinary-env
   CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-ddbunaglw}
@@ -54,6 +59,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
+    restart: unless-stopped
     ports:
       - "9999:8080"
     environment:
@@ -77,6 +83,7 @@ services:
 
   zipkin:
     image: openzipkin/zipkin:latest
+    restart: unless-stopped
     ports:
       - "9411:9411"
     networks:
@@ -85,6 +92,7 @@ services:
   # Catches every e-mail sent in development (account verification, ...): http://localhost:8026
   mailpit:
     image: axllent/mailpit:latest
+    restart: unless-stopped
     ports:
       - "8026:8025"     # web inbox (8025 is used by the eidos project)
       - "1026:1025"     # SMTP (1025 is used by the eidos project)
@@ -93,6 +101,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
+    restart: unless-stopped
     ports:
       - "5673:5672"     # host 5672 is used by the eidos project
       - "15673:15672"   # host 15672 is used by the eidos project
@@ -112,8 +121,11 @@ services:
 
   config-server:
     build: ./services/config-server
+    restart: unless-stopped
     ports:
       - "8888:8888"
+    environment:
+      JAVA_TOOL_OPTIONS: -Duser.timezone=Africa/Tunis
     networks:
       - hotel_net
     healthcheck:
@@ -125,13 +137,15 @@ services:
 
   discovery-service:
     build: ./services/discovery-service
+    restart: unless-stopped
     ports:
       - "8889:8889"
     depends_on:
       config-server:
         condition: service_healthy
     environment:
-      SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+      SPRING_CONFIG_IMPORT: configserver:http://config-server:8888
+      JAVA_TOOL_OPTIONS: -Duser.timezone=Africa/Tunis
     networks:
       - hotel_net
     healthcheck:
@@ -143,6 +157,7 @@ services:
 
   api-gateway:
     build: ./services/api-gateway
+    restart: unless-stopped
     ports:
       - "8180:8080"     # host 8080 is taken by Jenkins (WSL)
     depends_on:
@@ -158,6 +173,7 @@ services:
 
   chambre-service:
     build: ./services/chambre-service
+    restart: unless-stopped
     ports:
       - "8091:8081"     # host 8081 is used by the eidos project
     depends_on: *spring-depends
@@ -173,6 +189,7 @@ services:
 
   stock-service:
     build: ./services/stock-service
+    restart: unless-stopped
     ports:
       - "8082:8082"
     depends_on: *spring-depends
@@ -186,6 +203,7 @@ services:
 
   reservation-service:
     build: ./services/reservation-service
+    restart: unless-stopped
     ports:
       - "8083:8083"
     depends_on:
@@ -203,8 +221,12 @@ services:
       SERVICE_AUTH_TOKEN_URI: http://keycloak:8080/realms/hotel/protocol/openid-connect/token
       SERVICE_AUTH_CLIENT_SECRET: ${RESERVATION_SERVICE_SECRET:-7cc8fef7d6519c8c6c91f95f1b3a08c14016fbc28d4f568f}
       RABBITMQ_HOST: rabbitmq
-      MAIL_ENABLED: ${MAIL_ENABLED:-false}
-      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      # Booking e-mails go to Mailpit (http://localhost:8026) unless a real SMTP server is set in .env
+      MAIL_ENABLED: ${MAIL_ENABLED:-true}
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-false}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-false}
       MAIL_USERNAME: ${MAIL_USERNAME:-}
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
     networks:
@@ -212,6 +234,7 @@ services:
 
   user-service:
     build: ./services/user-service
+    restart: unless-stopped
     ports:
       - "3001:3000"     # host 3000 is used by the eidos project
     depends_on:
@@ -237,6 +260,7 @@ services:
 
   client-service:
     build: ./services/client-service
+    restart: unless-stopped
     ports:
       - "8084:8084"
     depends_on:
@@ -255,6 +279,7 @@ services:
 
   payment-service:
     build: ./services/payment-service
+    restart: unless-stopped
     ports:
       - "8087:8087"
     depends_on: *spring-depends
@@ -263,15 +288,19 @@ services:
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:h2:file:/data/paymentdb
-      # Card payments stay disabled until a real key is set in .env (see .env.example)
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_REPLACE_ME}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_REPLACE_ME}
-      STRIPE_CURRENCY: ${STRIPE_CURRENCY:-tnd}
+      # Online payment (Konnect) stays off until the keys are set in .env (see .env.example)
+      KONNECT_API_KEY: ${KONNECT_API_KEY:-}
+      KONNECT_WALLET_ID: ${KONNECT_WALLET_ID:-}
+      KONNECT_BASE_URL: ${KONNECT_BASE_URL:-https://api.sandbox.konnect.network/api/v2}
+      KONNECT_RETURN_URL: ${KONNECT_RETURN_URL:-http://localhost:5173/dashboard/mes-reservations}
+      KONNECT_WEBHOOK_URL: ${KONNECT_WEBHOOK_URL:-}
+      KONNECT_MODE: ${KONNECT_MODE:-live}
     networks:
       - hotel_net
 
   rh-service:
     build: ./services/rh-service
+    restart: unless-stopped
     ports:
       - "8086:8086"
     depends_on: *spring-depends
@@ -287,6 +316,7 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     ports:
       - "5173:80"
     depends_on:

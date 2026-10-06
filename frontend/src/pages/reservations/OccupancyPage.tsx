@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, BedDouble, LogIn, LogOut, BarChart2 } from 'lucide-react';
 import { reservationService, type Reservation, STATUS_LABELS, STATUS_COLORS } from '../../services/reservationService';
 import { chambreService, type Chambre } from '../../services/chambreService';
-import { formatDT } from '../../utils/format';
+import { formatDT, isoDate } from '../../utils/format';
 
 type RoomOccupancy = {
   chambre: Chambre;
@@ -11,7 +11,7 @@ type RoomOccupancy = {
   isCheckOut: boolean;
 };
 
-const today = () => new Date().toISOString().split('T')[0];
+const today = () => isoDate(new Date());
 
 const StatCard: React.FC<{ label: string; value: number | string; icon: React.ReactNode; color: string }> = ({
   label, value, icon, color,

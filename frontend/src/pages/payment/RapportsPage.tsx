@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, TrendingUp, FileText, AlertCircle, Clock } from 'lucide-react';
 import { paymentService, type Rapport, type MethodePaiement, METHODE_LABELS } from '../../services/paymentService';
 import MethodeIcon from '../../components/MethodeIcon';
-import { formatDT } from '../../utils/format';
+import { formatDT, isoDate } from '../../utils/format';
 
 const firstOfMonth = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 };
-const today = () => new Date().toISOString().split('T')[0];
+const today = () => isoDate(new Date());
 
 function StatCard({ label, value, icon, color, sub }: { label: string; value: string | number; icon: React.ReactNode; color: string; sub?: string }) {
   return (

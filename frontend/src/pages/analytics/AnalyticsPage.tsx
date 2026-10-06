@@ -3,10 +3,10 @@ import { TrendingUp, BedDouble, DollarSign, BarChart2, RefreshCw } from 'lucide-
 import { reservationService, type ReservationStats } from '../../services/reservationService';
 import { paymentService, type Rapport } from '../../services/paymentService';
 import { chambreService, type Chambre } from '../../services/chambreService';
-import { formatDT } from '../../utils/format';
+import { formatDT, isoDate } from '../../utils/format';
 
 const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
-const today = () => new Date().toISOString().split('T')[0];
+const today = () => isoDate(new Date());
 
 function KpiCard({ label, value, sub, icon, color }: {
   label: string; value: string | number; sub?: string;

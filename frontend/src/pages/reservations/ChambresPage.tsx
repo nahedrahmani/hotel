@@ -4,7 +4,7 @@ import { chambreService, type Chambre, ROOM_TYPE_LABELS, STATUT_LABELS, STATUT_C
 import { reservationService, type ReservationStatus } from '../../services/reservationService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
 import { apiError } from '../../utils/api';
-import { formatDT } from '../../utils/format';
+import { formatDT, isoDate } from '../../utils/format';
 
 const MONTHS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
@@ -309,7 +309,7 @@ function SuppressionModal({ chambre, onClose, onDone }: {
   const [error, setError]     = useState('');
 
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoDate(new Date());
     reservationService.getByRoom(chambre.id!)
       .then(res => setAVenir(res.data.filter(r => !ENDED.includes(r.status!) && (r.checkOutDate ?? '') >= today).length))
       .catch(() => setError('Impossible de vérifier les réservations de cette chambre.'));

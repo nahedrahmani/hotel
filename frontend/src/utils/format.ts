@@ -2,6 +2,10 @@
 // day never shifts with the browser's time zone.
 const toDate = (iso: string) => new Date(`${iso}T00:00:00`);
 
+/** "2026-11-12" for a day in the browser's time zone (toISOString would give the UTC day). */
+export const isoDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const dayMonthYear = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 const dayMonth = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
 

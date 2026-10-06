@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { reservationService, type Reservation, STATUS_LABELS, STATUS_COLORS, TYPE_LABELS } from './services/reservationService';
-import { formatDT, formatStay } from './utils/format';
+import { formatDT, formatStay, isoDate } from './utils/format';
 
 const MONTH_NAMES = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
@@ -45,11 +45,11 @@ export const CalendarPage = () => {
           if (!r.checkInDate || !r.checkOutDate) continue;
 
           // Mark every day the guest stays
-          const start = new Date(r.checkInDate);
-          const end = new Date(r.checkOutDate);
+          const start = new Date(`${r.checkInDate}T00:00:00`);
+          const end = new Date(`${r.checkOutDate}T00:00:00`);
 
           for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            const ds = d.toISOString().split('T')[0];
+            const ds = isoDate(d);
             const info = ensure(ds);
             if (ds === r.checkInDate) info.hasCheckIn = true;
             else if (ds === r.checkOutDate) info.hasCheckOut = true;
@@ -68,7 +68,7 @@ export const CalendarPage = () => {
   const firstWeekday = new Date(year, month, 1).getDay(); // 0=Sun
   const offset = firstWeekday === 0 ? 6 : firstWeekday - 1; // Monday-first
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = isoDate(new Date());
 
   const selectedInfo = selectedDay ? dayMap.get(selectedDay) : null;
 

@@ -5,6 +5,7 @@ import { reservationService, type ReservationStats } from '../../services/reserv
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
 import { apiError } from '../../utils/api';
 import { useConfirm } from '../../components/useConfirm';
+import { isoDate } from '../../utils/format';
 
 const TYPE_COLORS: Record<TypeShift, string> = {
   MATIN: 'warning', APRES_MIDI: 'primary', NUIT: 'dark', JOURNEE_COMPLETE: 'success',
@@ -25,7 +26,7 @@ function getWeekDates(base: Date): Date[] {
   });
 }
 
-function fmt(d: Date) { return d.toISOString().split('T')[0]; }
+const fmt = isoDate;
 
 export default function PlanningPage() {
   const [confirm, confirmDialog] = useConfirm();

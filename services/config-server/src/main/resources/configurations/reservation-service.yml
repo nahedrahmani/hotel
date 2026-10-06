@@ -34,19 +34,20 @@ spring:
         initial-interval: 2000
         max-attempts: 3
 
-management:
-  health:
-    rabbit:
-      enabled: false             # don't report RabbitMQ in health endpoint
-
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:noreply@hotel.example}
     password: ${MAIL_PASSWORD:}
     properties:
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
+      # Off for the local Mailpit; on for a real SMTP server (set in .env)
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS:true}
+
+management:
+  health:
+    rabbit:
+      enabled: false             # don't report RabbitMQ in health endpoint
 
 notification:
   from: ${MAIL_FROM:noreply@hotel.example}
