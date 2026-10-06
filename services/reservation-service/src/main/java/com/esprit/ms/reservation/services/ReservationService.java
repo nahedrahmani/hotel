@@ -135,8 +135,10 @@ public class ReservationService {
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public ReservationDTO addReservation(ReservationDTO dto) {
-        if (dto.getKeycloakId() == null || dto.getKeycloakId().isBlank()) {
-            throw new IllegalArgumentException("keycloakId is required (must be set from JWT)");
+        boolean hasGuest = (dto.getKeycloakId() != null && !dto.getKeycloakId().isBlank())
+                || (dto.getGuestName() != null && !dto.getGuestName().isBlank());
+        if (!hasGuest) {
+            throw new IllegalArgumentException("Le nom du client est obligatoire");
         }
         if (dto.getCheckInDate() == null || dto.getCheckOutDate() == null) {
             throw new IllegalArgumentException("Check-in and check-out dates are required");
@@ -194,7 +196,10 @@ public class ReservationService {
 
         Reservation.ReservationStatus previousStatus = existing.getStatus();
         existing.setCustomerId(dto.getCustomerId());
-        existing.setKeycloakId(dto.getKeycloakId());
+        // Callers that don't know the guest fields leave them as they are
+        if (dto.getKeycloakId() != null) existing.setKeycloakId(dto.getKeycloakId());
+        if (dto.getGuestName() != null) existing.setGuestName(dto.getGuestName());
+        if (dto.getGuestEmail() != null) existing.setGuestEmail(dto.getGuestEmail());
         existing.setRoomId(dto.getRoomId());
         existing.setCheckInDate(dto.getCheckInDate());
         existing.setCheckOutDate(dto.getCheckOutDate());
@@ -251,6 +256,7 @@ public class ReservationService {
         reservation.setUpdatedAt(LocalDateTime.now());
         Reservation saved = reservationRepository.save(reservation);
         syncChambreStatut(saved, previous);
+        cancelUnpaidFactures(saved, penalty);
         notificationService.sendCancellation(saved, penalty);
         eventPublisher.publish(saved, ReservationEvent.Type.CANCELLED, penalty);
 
@@ -437,6 +443,23 @@ public class ReservationService {
 
     private static final BigDecimal TVA_HEBERGEMENT = BigDecimal.valueOf(19);
     private static final java.time.format.DateTimeFormatter DATE_FR = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    /**
+     * A free cancellation with nothing paid leaves nothing to collect, so the stay's invoices
+     * are cancelled. With a fee or a payment, the reception settles it (charge or refund).
+     */
+    private void cancelUnpaidFactures(Reservation reservation, BigDecimal penalty) {
+        if (penalty != null && penalty.signum() > 0) return;
+        try {
+            for (PaymentClient.FactureDTO f : paymentClient.getFacturesByReservation(reservation.getId())) {
+                boolean open = "BROUILLON".equals(f.getStatut()) || "EMISE".equals(f.getStatut());
+                boolean unpaid = f.getMontantPaye() == null || f.getMontantPaye().signum() == 0;
+                if (open && unpaid) paymentClient.annulerFacture(f.getId());
+            }
+        } catch (Exception e) {
+            log.warn("Could not cancel invoices of cancelled reservation {}: {}", reservation.getId(), e.getMessage());
+        }
+    }
 
     private void autoCreateBrouillonFacture(Reservation reservation) {
         try {

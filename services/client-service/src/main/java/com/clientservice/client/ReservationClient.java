@@ -22,6 +22,12 @@ public interface ReservationClient {
     class ReservationDTO {
         private Long id;
         private Long customerId;
+        // Sent back unchanged on update: reservation-service replaces every field it receives
+        private String keycloakId;
+        private String guestName;
+        private String guestEmail;
+        private String specialRequests;
+        private String cancelReason;
         private Long roomId;
         private String checkInDate;
         private String checkOutDate;

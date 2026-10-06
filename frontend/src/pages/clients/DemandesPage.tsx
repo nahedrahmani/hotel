@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, User } from 'lucide-react';
+import { Plus, X, User, BedDouble } from 'lucide-react';
 import {
   clientService,
   type Demande,
@@ -8,10 +8,11 @@ import {
   type DemandeStatut,
   DEMANDE_TYPE_LABELS,
   PRIORITY_COLORS,
+  PRIORITY_LABELS,
   STATUT_COLORS,
   STATUT_LABELS,
 } from '../../services/clientService';
-import keycloak from '../../config/keycloak';
+import { reservationService, guestLabel, type Reservation } from '../../services/reservationService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
 import { apiError } from '../../utils/api';
 
@@ -42,14 +43,18 @@ const DemandesPage: React.FC = () => {
   const [assignModal, setAssignModal] = useState<{ id: number; current?: string } | null>(null);
   const [assignTo, setAssignTo]   = useState('');
 
-  const currentUserId = keycloak.tokenParsed?.sub ?? '';
+  // Bookings give each request a guest name and a room number
+  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const stayOf = (d: Demande) => reservations.find(r => r.id === d.reservationId);
+  const inHouse = reservations.filter(r => r.status === 'CHECKED_IN' || r.status === 'CONFIRMED');
 
   const fetchDemandes = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await clientService.getAllDemandes();
+      const [res, resas] = await Promise.all([clientService.getAllDemandes(), reservationService.getAll()]);
       setDemandes(res.data);
+      setReservations(resas.data);
     } catch {
       setError('Impossible de charger les demandes.');
     } finally { setLoading(false); }
@@ -58,8 +63,14 @@ const DemandesPage: React.FC = () => {
   useEffect(() => { fetchDemandes(); }, []);
 
   const openCreate = () => {
-    setForm({ ...EMPTY_FORM, keycloakId: currentUserId });
+    setForm(EMPTY_FORM);
     setShowForm(true);
+  };
+
+  const pickStay = (id: number) => {
+    const r = reservations.find(x => x.id === id);
+    // A desk booking has no guest account; the request is then tied to the stay only
+    setForm(f => ({ ...f, reservationId: r?.id, chambreId: r?.roomId, keycloakId: r?.keycloakId ?? '' }));
   };
 
   const handleSave = async () => {
@@ -151,17 +162,25 @@ const DemandesPage: React.FC = () => {
                       <div className="d-flex justify-content-between align-items-start mb-1">
                         <span className="badge bg-dark">{DEMANDE_TYPE_LABELS[d.type]}</span>
                         <span className={`badge bg-${PRIORITY_COLORS[d.priority!]}`}>
-                          {d.priority}
+                          {PRIORITY_LABELS[d.priority!] ?? d.priority}
                         </span>
                       </div>
                       {d.description && (
                         <p className="small text-dark mb-2" style={{ lineClamp: 2 }}>{d.description}</p>
                       )}
-                      <div className="d-flex align-items-center gap-1 text-muted mb-2" style={{ fontSize: '0.72rem' }}>
-                        <User size={11} />
-                        <span className="text-truncate" style={{ maxWidth: 110 }}>{d.keycloakId}</span>
-                      </div>
-                      {d.chambreId && <div className="small text-muted mb-2">Chambre #{d.chambreId}</div>}
+                      {(() => {
+                        const stay = stayOf(d);
+                        return (
+                          <div className="d-flex flex-wrap gap-2 text-muted mb-2" style={{ fontSize: '0.75rem' }}>
+                            <span className="d-flex align-items-center gap-1"><User size={11} />{stay ? guestLabel(stay) : 'Client'}</span>
+                            {(stay?.chambre?.numero || d.chambreId) && (
+                              <span className="d-flex align-items-center gap-1">
+                                <BedDouble size={11} />Ch. {stay?.chambre?.numero ?? d.chambreId}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {d.assignedTo && (
                         <div className="small text-muted mb-2">👤 {d.assignedTo}</div>
                       )}
@@ -207,8 +226,15 @@ const DemandesPage: React.FC = () => {
               <div className="modal-body">
                 <div className="row g-3">
                   <div className="col-12">
-                    <label className="form-label fw-semibold small">ID Client (Keycloak)</label>
-                    <input className="form-control" value={form.keycloakId} onChange={e => setForm(f => ({ ...f, keycloakId: e.target.value }))} />
+                    <label className="form-label fw-semibold small">Séjour *</label>
+                    <select className="form-select" value={form.reservationId ?? ''} onChange={e => pickStay(Number(e.target.value))}>
+                      <option value="">— Client et chambre —</option>
+                      {inHouse.map(r => (
+                        <option key={r.id} value={r.id}>
+                          {guestLabel(r)} · Ch. {r.chambre?.numero ?? r.roomId} · {r.status === 'CHECKED_IN' ? 'en séjour' : 'arrivée prévue'}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="col-md-6">
                     <label className="form-label fw-semibold small">Type</label>
@@ -222,17 +248,9 @@ const DemandesPage: React.FC = () => {
                     <label className="form-label fw-semibold small">Priorité</label>
                     <select className="form-select" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value as DemandePriority }))}>
                       {(['LOW', 'NORMAL', 'HIGH', 'URGENT'] as DemandePriority[]).map(p => (
-                        <option key={p} value={p}>{p}</option>
+                        <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
                       ))}
                     </select>
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label fw-semibold small">N° Chambre</label>
-                    <input type="number" className="form-control" value={form.chambreId ?? ''} onChange={e => setForm(f => ({ ...f, chambreId: e.target.value ? Number(e.target.value) : undefined }))} />
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label fw-semibold small">N° Réservation</label>
-                    <input type="number" className="form-control" value={form.reservationId ?? ''} onChange={e => setForm(f => ({ ...f, reservationId: e.target.value ? Number(e.target.value) : undefined }))} />
                   </div>
                   <div className="col-12">
                     <label className="form-label fw-semibold small">Description</label>
@@ -242,7 +260,7 @@ const DemandesPage: React.FC = () => {
               </div>
               <div className="modal-footer border-0">
                 <button className="btn btn-light" onClick={() => setShowForm(false)}>Annuler</button>
-                <button className="btn btn-dark" onClick={handleSave} disabled={saving || !form.keycloakId}>
+                <button className="btn btn-dark" onClick={handleSave} disabled={saving || !form.reservationId}>
                   {saving && <span className="spinner-border spinner-border-sm me-2" />}Créer
                 </button>
               </div>

@@ -41,6 +41,8 @@ export type Reservation = {
   cancelReason?: string;
   cancellationPenalty?: number;
   guestEmail?: string;
+  /** Guest's name: from their account, or typed by reception for a desk/phone booking */
+  guestName?: string;
   lastModifiedBy?: string;
   totalPrice?: number;
   depositPaid?: number;
@@ -85,6 +87,9 @@ export function cancellationPenalty(r: Reservation, now = new Date()): number {
 }
 
 // ── Labels ─────────────────────────────────────────────────────────────────────
+
+/** Who the booking is for, as reception would say it. */
+export const guestLabel = (r: Reservation) => r.guestName?.trim() || r.guestEmail || 'Client';
 
 export const TYPE_LABELS: Record<ReservationType, string> = {
   ONLINE: 'En ligne',

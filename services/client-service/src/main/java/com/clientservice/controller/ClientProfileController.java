@@ -25,13 +25,13 @@ public class ClientProfileController {
     private final ClientProfileService profileService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
     public List<ClientProfile> getAll() {
         return profileService.getAll();
     }
 
     @GetMapping("/{keycloakId}")
-    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','STAFF'))")
+    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','MANAGER','STAFF'))")
     public ClientProfile getByKeycloakId(@PathVariable String keycloakId, Authentication authentication) {
         // A guest who never filled in preferences still "has" a profile: an empty one, not a 404
         if (keycloakId.equals(authentication.getName())) {
@@ -58,7 +58,7 @@ public class ClientProfileController {
     }
 
     @GetMapping("/{keycloakId}/history")
-    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','STAFF'))")
+    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','MANAGER','STAFF'))")
     public List<CheckInRecord> getHistory(@PathVariable String keycloakId) {
         return profileService.getHistory(keycloakId);
     }
@@ -103,14 +103,14 @@ public class ClientProfileController {
     // ── Documents ──────────────────────────────────────────────────────────────
 
     @GetMapping("/{keycloakId}/documents")
-    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','STAFF'))")
+    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','MANAGER','STAFF'))")
     public List<ClientDocument> getDocuments(@PathVariable String keycloakId) {
         return profileService.getDocuments(keycloakId);
     }
 
     @PostMapping(value = "/{keycloakId}/documents", consumes = "multipart/form-data")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','STAFF'))")
+    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','MANAGER','STAFF'))")
     public ClientDocument uploadDocument(
             @PathVariable String keycloakId,
             @RequestParam("type") ClientDocument.DocumentType type,
@@ -121,7 +121,7 @@ public class ClientProfileController {
     }
 
     @DeleteMapping("/{keycloakId}/documents/{docId}")
-    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','STAFF'))")
+    @PreAuthorize("isAuthenticated() and (#keycloakId == authentication.name or hasAnyRole('ADMIN','MANAGER','STAFF'))")
     public ResponseEntity<Void> deleteDocument(
             @PathVariable String keycloakId,
             @PathVariable Long docId) {

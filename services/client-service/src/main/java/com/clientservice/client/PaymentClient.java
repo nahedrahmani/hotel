@@ -17,11 +17,23 @@ public interface PaymentClient {
     @PatchMapping("/api/payment/factures/{id}/emettre")
     FactureDTO emettre(@PathVariable Long id);
 
+    @PostMapping("/api/payment/factures/reservation/{reservationId}/lignes")
+    FactureDTO ajouterLigneSejour(@PathVariable Long reservationId, @RequestBody LigneDTO ligne);
+
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     class FactureDTO {
         private Long id;
         private String statut;
         private BigDecimal totalTTC;
+    }
+
+    @Data
+    class LigneDTO {
+        private String description;
+        private Integer quantite;
+        private BigDecimal prixUnitaire;
+        private BigDecimal tauxTva;
+        private Boolean prixTtc;
     }
 }

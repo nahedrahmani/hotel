@@ -18,6 +18,9 @@ public interface PaymentClient {
     @PostMapping("/api/payment/factures")
     FactureDTO createFacture(@RequestBody FactureCreateDTO dto);
 
+    @PatchMapping("/api/payment/factures/{id}/annuler")
+    FactureDTO annulerFacture(@PathVariable Long id);
+
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     class FactureDTO {

@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -56,7 +57,14 @@ public class ReservationRestApi {
     public ReservationDTO addReservation(
             @Valid @RequestBody ReservationDTO dto,
             @AuthenticationPrincipal Jwt jwt) {
-        if (jwt != null) {
+        boolean staff = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> List.of("ROLE_ADMIN", "ROLE_MANAGER", "ROLE_STAFF").contains(a.getAuthority()));
+        if (staff && dto.getGuestName() != null && !dto.getGuestName().isBlank()) {
+            // Reception booking for a guest at the desk or on the phone: the guest has no
+            // account here, so the booking belongs to no one's "Mes réservations"
+            dto.setKeycloakId(null);
+            dto.setGuestName(dto.getGuestName().trim());
+        } else if (jwt != null) {
             dto.setKeycloakId(jwt.getSubject());
             String email = jwt.getClaimAsString("email");
             if (email != null) dto.setGuestEmail(email);
@@ -135,8 +143,9 @@ public class ReservationRestApi {
         return Map.of("available", available);
     }
 
+    // Counts of reservations the front desk can already list (today's arrivals/departures)
     @GetMapping("/stats")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
     public ResponseEntity<Map<String, Object>> getStats() {
         return ResponseEntity.ok(reservationService.getStats());
     }

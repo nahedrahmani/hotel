@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tn.esprit.rhservice.dto.ShiftDTO;
 import tn.esprit.rhservice.entity.Employe;
 import tn.esprit.rhservice.entity.Shift;
+import tn.esprit.rhservice.enums.TypeShift;
 import tn.esprit.rhservice.repository.EmployeRepository;
 import tn.esprit.rhservice.repository.ShiftRepository;
 
@@ -34,10 +35,18 @@ public class PlanningService {
         return shiftRepository.findByDate(date).stream().map(this::toDTO).toList();
     }
 
-    public ShiftDTO createShift(ShiftDTO dto) {
-        if (dto.getHeureFin().isBefore(dto.getHeureDebut())) {
-            throw new IllegalArgumentException("L'heure de fin doit être après l'heure de début");
+    /** A night shift ends the next morning; any other shift ends the same day, after it starts. */
+    private static void checkHours(ShiftDTO dto) {
+        if (dto.getHeureDebut() == null || dto.getHeureFin() == null || dto.getHeureFin().equals(dto.getHeureDebut())) {
+            throw new IllegalArgumentException("Indiquez une heure de début et une heure de fin différentes");
         }
+        if (dto.getTypeShift() != TypeShift.NUIT && dto.getHeureFin().isBefore(dto.getHeureDebut())) {
+            throw new IllegalArgumentException("L'heure de fin doit être après l'heure de début (sauf pour un shift de nuit)");
+        }
+    }
+
+    public ShiftDTO createShift(ShiftDTO dto) {
+        checkHours(dto);
         Employe employe = employeRepository.findById(dto.getEmployeId())
                 .orElseThrow(() -> new EntityNotFoundException("Employé introuvable: " + dto.getEmployeId()));
         Shift shift = Shift.builder()
@@ -55,6 +64,7 @@ public class PlanningService {
                     .orElseThrow(() -> new EntityNotFoundException("Employé introuvable: " + dto.getEmployeId()));
             shift.setEmploye(employe);
         }
+        checkHours(dto);
         shift.setDate(dto.getDate());
         shift.setHeureDebut(dto.getHeureDebut());
         shift.setHeureFin(dto.getHeureFin());

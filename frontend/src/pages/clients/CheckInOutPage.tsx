@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Search, LogIn, LogOut, CheckCircle, AlertCircle, Package, Plus } from 'lucide-react';
+import { Search, LogIn, LogOut, CheckCircle, AlertCircle, Package } from 'lucide-react';
 import { clientService, type CheckInRecord } from '../../services/clientService';
-import { reservationService, type Reservation, STATUS_LABELS, STATUS_COLORS } from '../../services/reservationService';
+import { reservationService, type Reservation, STATUS_LABELS, STATUS_COLORS, guestLabel } from '../../services/reservationService';
 import { chambreService } from '../../services/chambreService';
-import keycloak from '../../config/keycloak';
 import { apiError } from '../../utils/api';
-import { formatDate, formatDT } from '../../utils/format';
+import { formatDate, formatDT, formatStay, isoDate } from '../../utils/format';
 
 type ConsoItem = { produitId: number; nom: string; quantite: number; prixUnitaire: number };
 
@@ -14,7 +13,7 @@ type Step = 'search' | 'review' | 'done';
 const CheckInOutPage: React.FC = () => {
   const [mode, setMode]               = useState<'CHECKIN' | 'CHECKOUT'>('CHECKIN');
   const [reservationId, setResId]     = useState('');
-  const [keycloakId, setKeycloakId]   = useState(keycloak.tokenParsed?.sub ?? '');
+  const [bookings, setBookings]       = useState<Reservation[]>([]);
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [records, setRecords]         = useState<CheckInRecord[]>([]);
   const [step, setStep]               = useState<Step>('search');
@@ -25,20 +24,29 @@ const CheckInOutPage: React.FC = () => {
   const [result, setResult]           = useState<CheckInRecord | null>(null);
   const [error, setError]             = useState('');
 
-  // Minibar/conso state (checkout only)
-  const [, setRoomProduits] = useState<{ id: number; nom: string; prixUnitaire: number }[]>([]);
-  const [conso, setConso]               = useState<ConsoItem[]>([]);
-  const [savingConso, setSavingConso]   = useState(false);
-  const [consoResult, setConsoResult]   = useState<{ ok: boolean; text: string } | null>(null);
+  // Minibar of the room, counted before the departure is confirmed (checkout only)
+  const [conso, setConso]             = useState<ConsoItem[]>([]);
+  const [billed, setBilled]           = useState(0);
 
-  const search = async () => {
-    if (!reservationId.trim()) return;
+  // The desk works from today's list; the booking number search is for anything else
+  useEffect(() => {
+    if (step !== 'search') return;
+    reservationService.getAll().then(res => setBookings(res.data)).catch(() => setBookings([]));
+  }, [step]);
+
+  const today = isoDate(new Date());
+  const candidates = mode === 'CHECKIN'
+    ? bookings.filter(r => (r.status === 'CONFIRMED' || r.status === 'PENDING') && r.checkInDate <= today && r.checkOutDate > today)
+    : bookings.filter(r => r.status === 'CHECKED_IN')
+        .sort((a, b) => a.checkOutDate.localeCompare(b.checkOutDate));
+
+  const open = async (id: number) => {
     setLoading(true);
     setError('');
     try {
       const [resRes, recRes] = await Promise.all([
-        reservationService.getById(Number(reservationId)),
-        clientService.getRecordsByReservation(Number(reservationId)),
+        reservationService.getById(id),
+        clientService.getRecordsByReservation(id),
       ]);
       setReservation(resRes.data);
       setRecords(recRes.data);
@@ -49,14 +57,26 @@ const CheckInOutPage: React.FC = () => {
       setLoading(false); }
   };
 
+  const search = () => { if (reservationId.trim()) open(Number(reservationId)); };
+
   const confirm = async () => {
     if (!reservation) return;
     setProcessing(true);
     setError('');
     try {
+      if (mode === 'CHECKOUT') {
+        // Extras go on the stay invoice first: the check-out then issues the final invoice
+        const taken = conso.filter(c => c.quantite > 0);
+        for (const c of taken) {
+          await clientService.addConso(reservation.id!, { chambreId: reservation.roomId, produitId: c.produitId, quantite: c.quantite });
+        }
+        setBilled(taken.reduce((sum, c) => sum + c.quantite * c.prixUnitaire, 0));
+        // Counted once: a retry after a failed check-out must not bill them twice
+        setConso(prev => prev.map(c => ({ ...c, quantite: 0 })));
+      }
       const r = mode === 'CHECKIN'
-        ? await clientService.checkIn(reservation.id!, keycloakId, docVerified, notes || undefined)
-        : await clientService.checkOut(reservation.id!, keycloakId, notes || undefined);
+        ? await clientService.checkIn(reservation.id!, reservation.keycloakId ?? '', docVerified, notes || undefined)
+        : await clientService.checkOut(reservation.id!, reservation.keycloakId ?? '', notes || undefined);
       setResult(r.data);
       setStep('done');
     } catch (e) {
@@ -70,42 +90,20 @@ const CheckInOutPage: React.FC = () => {
     setStep('search'); setResId(''); setReservation(null);
     setRecords([]); setResult(null); setError('');
     setDocVerified(false); setNotes('');
-    setConso([]); setRoomProduits([]);
+    setConso([]); setBilled(0);
   };
 
-  // Load room's assigned products when a checkout reservation is found
+  // Products stocked in the room (minibar), all at zero until counted
   useEffect(() => {
-    if (mode !== 'CHECKOUT' || !reservation?.roomId) { setRoomProduits([]); setConso([]); return; }
+    if (mode !== 'CHECKOUT' || !reservation?.roomId) { setConso([]); return; }
     chambreService.getProduitsByChambre(reservation.roomId).then(res => {
       const produits = (res.data ?? []) as { id: number; nom: string; prixUnitaire: number }[];
-      setRoomProduits(produits);
-      // Pre-fill one entry per room product with quantity 0
       setConso(produits.map(p => ({ produitId: p.id, nom: p.nom, quantite: 0, prixUnitaire: p.prixUnitaire ?? 0 })));
-    }).catch(() => { setRoomProduits([]); setConso([]); });
+    }).catch(() => setConso([]));
   }, [mode, reservation?.roomId]);
 
   const updateConsoQty = (produitId: number, qty: number) =>
     setConso(prev => prev.map(c => c.produitId === produitId ? { ...c, quantite: Math.max(0, qty) } : c));
-
-  const submitConso = async () => {
-    if (!result) return;
-    const toRecord = conso.filter(c => c.quantite > 0);
-    if (toRecord.length === 0) return;
-    setSavingConso(true);
-    setConsoResult(null);
-    try {
-      await Promise.all(toRecord.map(c =>
-        clientService.addConso(result.reservationId!, { chambreId: result.chambreId, produitId: c.produitId, quantite: c.quantite })
-      ));
-      setConso(prev => prev.map(c => ({ ...c, quantite: 0 })));
-      const n = toRecord.length;
-      setConsoResult({ ok: true, text: `${n} consommation${n > 1 ? 's' : ''} enregistrée${n > 1 ? 's' : ''}.` });
-    } catch (e) {
-      setConsoResult({ ok: false, text: apiError(e, 'Les consommations n\'ont pas pu être enregistrées.') });
-    } finally {
-      setSavingConso(false);
-    }
-  };
 
   const isCheckedIn = reservation?.status === 'CHECKED_IN';
 
@@ -136,11 +134,34 @@ const CheckInOutPage: React.FC = () => {
           {step === 'search' && (
             <div className="card border-0 shadow-sm">
               <div className="card-body p-4">
-                <h5 className="fw-bold mb-4">
-                  {mode === 'CHECKIN' ? 'Check-in — rechercher la réservation' : 'Check-out — rechercher la réservation'}
+                <h5 className="fw-bold mb-3">
+                  {mode === 'CHECKIN' ? "Arrivées du jour" : 'Clients en séjour'}
                 </h5>
-                <div className="mb-3">
-                  <label className="form-label fw-semibold">Numéro de réservation</label>
+                {candidates.length === 0 ? (
+                  <p className="text-muted small mb-4">
+                    {mode === 'CHECKIN' ? "Aucune arrivée attendue aujourd'hui." : 'Aucun client en séjour.'}
+                  </p>
+                ) : (
+                  <div className="list-group mb-4">
+                    {candidates.map(r => (
+                      <button key={r.id} type="button" onClick={() => open(r.id!)}
+                        className="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
+                        <div>
+                          <div className="fw-semibold">{guestLabel(r)}</div>
+                          <small className="text-muted">
+                            Ch. {r.chambre?.numero ?? r.roomId} · {formatStay(r.checkInDate, r.checkOutDate)} · {r.numberOfGuests ?? 1} pers.
+                          </small>
+                        </div>
+                        <span className="d-flex align-items-center gap-2">
+                          {mode === 'CHECKOUT' && r.checkOutDate <= today && <span className="badge text-bg-warning">Départ aujourd'hui</span>}
+                          <span className="text-muted small">#{r.id}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="mb-1">
+                  <label className="form-label fw-semibold small text-muted">Autre réservation — numéro</label>
                   <div className="input-group">
                     <input
                       type="number"
@@ -154,17 +175,6 @@ const CheckInOutPage: React.FC = () => {
                       {loading ? <span className="spinner-border spinner-border-sm" /> : <Search size={16} />}
                     </button>
                   </div>
-                </div>
-                <div className="mb-3">
-                  <label className="form-label fw-semibold">ID Client (Keycloak)</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={keycloakId}
-                    onChange={e => setKeycloakId(e.target.value)}
-                    placeholder="ID Keycloak du client"
-                  />
-                  <small className="text-muted">Pré-rempli avec votre propre ID. Modifiez pour un autre client.</small>
                 </div>
                 {error && <div className="alert alert-danger py-2">{error}</div>}
               </div>
@@ -192,11 +202,11 @@ const CheckInOutPage: React.FC = () => {
                     </div>
                     <div className="col-6">
                       <small className="text-muted d-block">Chambre</small>
-                      <strong>{reservation.roomId}</strong>
+                      <strong>{reservation.chambre?.numero ?? reservation.roomId}</strong>
                     </div>
                     <div className="col-6">
                       <small className="text-muted d-block">Client</small>
-                      <strong>{reservation.customerId}</strong>
+                      <strong>{guestLabel(reservation)}</strong>
                     </div>
                     <div className="col-6">
                       <small className="text-muted d-block">Arrivée prévue</small>
@@ -228,13 +238,13 @@ const CheckInOutPage: React.FC = () => {
                 {mode === 'CHECKIN' && !['CONFIRMED', 'PENDING'].includes(reservation.status ?? '') && (
                   <div className="alert alert-warning py-2 small">
                     <AlertCircle size={14} className="me-1" />
-                    Ce check-in sera refusé — la réservation doit être CONFIRMED ou PENDING.
+                    Check-in impossible : la réservation doit être en attente ou confirmée.
                   </div>
                 )}
                 {mode === 'CHECKOUT' && !isCheckedIn && (
                   <div className="alert alert-warning py-2 small">
                     <AlertCircle size={14} className="me-1" />
-                    Ce check-out sera refusé — la réservation doit être CHECKED_IN.
+                    Check-out impossible : le client n’est pas enregistré comme arrivé.
                   </div>
                 )}
 
@@ -251,6 +261,40 @@ const CheckInOutPage: React.FC = () => {
                     <label className="form-check-label fw-semibold" htmlFor="docVerified">
                       Document d'identité vérifié ✓
                     </label>
+                  </div>
+                )}
+
+                {/* Minibar count — billed on the stay invoice when the departure is confirmed */}
+                {mode === 'CHECKOUT' && isCheckedIn && conso.length > 0 && (
+                  <div className="border rounded-3 p-3 mb-3">
+                    <h6 className="fw-bold mb-1 d-flex align-items-center gap-2">
+                      <Package size={16} /> Minibar
+                    </h6>
+                    <p className="text-muted small mb-3">
+                      Indiquez ce qui a été consommé : c’est ajouté à la facture du séjour et retiré du stock.
+                    </p>
+                    {conso.map(c => (
+                      <div key={c.produitId} className="d-flex align-items-center gap-3 mb-2">
+                        <span className="flex-grow-1 small">{c.nom}</span>
+                        <span className="text-muted small text-nowrap">{formatDT(c.prixUnitaire)} / u</span>
+                        <div className="input-group input-group-sm" style={{ width: 110 }}>
+                          <button className="btn btn-outline-secondary px-2" aria-label={`Retirer un ${c.nom}`}
+                            onClick={() => updateConsoQty(c.produitId, c.quantite - 1)}>−</button>
+                          <input type="number" className="form-control text-center" min={0}
+                            value={c.quantite}
+                            onChange={e => updateConsoQty(c.produitId, Number(e.target.value))} />
+                          <button className="btn btn-outline-secondary px-2" aria-label={`Ajouter un ${c.nom}`}
+                            onClick={() => updateConsoQty(c.produitId, c.quantite + 1)}>+</button>
+                        </div>
+                        <span className="text-nowrap small fw-semibold" style={{ minWidth: 60, textAlign: 'right' }}>
+                          {formatDT(c.quantite * c.prixUnitaire)}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="border-top pt-2 mt-2 d-flex justify-content-between small fw-semibold">
+                      <span>Total minibar</span>
+                      <span>{formatDT(conso.reduce((sum, c) => sum + c.quantite * c.prixUnitaire, 0))}</span>
+                    </div>
                   </div>
                 )}
 
@@ -283,59 +327,20 @@ const CheckInOutPage: React.FC = () => {
                     {result.type === 'CHECKIN' ? 'Check-in effectué !' : 'Check-out effectué !'}
                   </h4>
                   <p className="text-muted mb-3">
-                    Réservation #{result.reservationId} — Chambre {result.chambreId ?? '—'}<br />
+                    {reservation ? guestLabel(reservation) : `Réservation #${result.reservationId}`} — Chambre {reservation?.chambre?.numero ?? result.chambreId ?? '—'}<br />
                     {new Date(result.actualTime).toLocaleString('fr-FR')}
                   </p>
+                  {result.type === 'CHECKOUT' && (
+                    <p className="small mb-3">
+                      Facture du séjour émise{billed > 0 && <>, minibar inclus ({formatDT(billed)})</>}. Le règlement se fait depuis Factures.
+                    </p>
+                  )}
                   <button className="btn btn-outline-dark btn-sm px-4" onClick={reset}>
                     Nouvelle opération
                   </button>
                 </div>
               </div>
 
-              {/* Minibar / conso panel — checkout only */}
-              {result.type === 'CHECKOUT' && conso.length > 0 && (
-                <div className="card border-0 shadow-sm">
-                  <div className="card-body">
-                    <h6 className="fw-bold mb-3 d-flex align-items-center gap-2">
-                      <Package size={16} /> Consommation minibar / extras
-                    </h6>
-                    <p className="text-muted small mb-3">
-                      Enregistrez les articles consommés pendant le séjour. Seuls les articles avec une quantité &gt; 0 sont facturés.
-                    </p>
-                    {conso.map(c => (
-                      <div key={c.produitId} className="d-flex align-items-center gap-3 mb-2">
-                        <span className="flex-grow-1 small">{c.nom}</span>
-                        <span className="text-muted small text-nowrap">{formatDT(c.prixUnitaire)} / u</span>
-                        <div className="input-group" style={{ width: 110 }}>
-                          <button className="btn btn-sm btn-outline-secondary px-2"
-                            onClick={() => updateConsoQty(c.produitId, c.quantite - 1)}>−</button>
-                          <input type="number" className="form-control form-control-sm text-center" min={0}
-                            value={c.quantite}
-                            onChange={e => updateConsoQty(c.produitId, Number(e.target.value))} />
-                          <button className="btn btn-sm btn-outline-secondary px-2"
-                            onClick={() => updateConsoQty(c.produitId, c.quantite + 1)}>+</button>
-                        </div>
-                        <span className="text-nowrap small fw-semibold" style={{ minWidth: 60, textAlign: 'right' }}>
-                          {formatDT(c.quantite * c.prixUnitaire)}
-                        </span>
-                      </div>
-                    ))}
-                    <div className="border-top pt-3 mt-3 d-flex justify-content-between align-items-center">
-                      <span className="fw-bold">
-                        Total : {formatDT(conso.reduce((s, c) => s + c.quantite * c.prixUnitaire, 0))}
-                      </span>
-                      <button className="btn btn-dark btn-sm d-flex align-items-center gap-2"
-                        onClick={submitConso} disabled={savingConso || conso.every(c => c.quantite === 0)}>
-                        {savingConso ? <span className="spinner-border spinner-border-sm" /> : <Plus size={14} />}
-                        Enregistrer la consommation
-                      </button>
-                    </div>
-                    {consoResult && (
-                      <div className={`alert py-2 small mt-3 mb-0 ${consoResult.ok ? 'alert-success' : 'alert-danger'}`}>{consoResult.text}</div>
-                    )}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>

@@ -82,6 +82,10 @@ export const DEMANDE_TYPE_LABELS: Record<DemandeType, string> = {
   OTHER: 'Autre',
 };
 
+export const PRIORITY_LABELS: Record<DemandePriority, string> = {
+  LOW: 'Basse', NORMAL: 'Normale', HIGH: 'Haute', URGENT: 'Urgente',
+};
+
 export const PRIORITY_COLORS: Record<DemandePriority, string> = {
   LOW: 'secondary', NORMAL: 'primary', HIGH: 'warning', URGENT: 'danger',
 };

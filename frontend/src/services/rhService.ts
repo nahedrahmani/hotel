@@ -110,6 +110,10 @@ export const DEPT_LABELS: Record<Departement, string> = {
   RESSOURCES_HUMAINES: 'Ressources Humaines', FINANCE: 'Finance',
 };
 
+export const STATUT_EMPLOYE_LABELS: Record<StatutEmploye, string> = {
+  ACTIF: 'Actif', INACTIF: 'Inactif', EN_CONGE: 'En congé', SUSPENDU: 'Suspendu',
+};
+
 export const STATUT_EMPLOYE_COLORS: Record<StatutEmploye, string> = {
   ACTIF: 'success', INACTIF: 'secondary', EN_CONGE: 'warning', SUSPENDU: 'danger',
 };

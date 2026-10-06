@@ -10,11 +10,11 @@ import {
   TYPE_LABELS,
   STATUS_LABELS,
   STATUS_COLORS,
+  guestLabel,
 } from '../../services/reservationService';
 import { chambreService, type Chambre, ROOM_TYPE_LABELS } from '../../services/chambreService';
 import { formatDate, formatDT } from '../../utils/format';
 import { apiError } from '../../utils/api';
-import keycloak from '../../config/keycloak';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
 
 /** Shows a cancellation policy warning based on hours until check-in. */
@@ -166,13 +166,18 @@ const ReservationsPage: React.FC = () => {
       setFormError('Chambre et dates sont obligatoires.');
       return;
     }
+    if (!editId && !form.guestName?.trim()) {
+      setFormError('Indiquez le nom du client.');
+      return;
+    }
     setSaving(true);
     setFormError('');
     try {
       if (editId) {
         await reservationService.update(editId, form);
       } else {
-        await reservationService.create({ ...form, keycloakId: keycloak.tokenParsed?.sub });
+        // The price is always computed by the server from the room's rates
+        await reservationService.create({ ...form, totalPrice: undefined });
       }
       closeModal();
       fetchAll();
@@ -303,6 +308,7 @@ const ReservationsPage: React.FC = () => {
             <thead className="border-bottom">
               <tr>
                 <th className="px-4 py-3">ID</th>
+                <th className="py-3">Client</th>
                 <th className="py-3">Chambre</th>
                 <th className="py-3">Arrivée</th>
                 <th className="py-3">Départ</th>
@@ -315,11 +321,15 @@ const ReservationsPage: React.FC = () => {
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={9} className="text-center text-muted py-4">Aucune réservation</td></tr>
+                <tr><td colSpan={10} className="text-center text-muted py-4">Aucune réservation</td></tr>
               )}
               {filtered.map(r => (
                 <tr key={r.id}>
                   <td className="px-4 py-3 text-muted">#{r.id}</td>
+                  <td className="py-3">
+                    <div className="fw-semibold">{guestLabel(r)}</div>
+                    {r.guestEmail && r.guestName && <small className="text-muted">{r.guestEmail}</small>}
+                  </td>
                   <td className="py-3">
                     <div className="fw-semibold">{chambreLabel(r)}</div>
                     {r.chambre && (
@@ -429,10 +439,14 @@ const ReservationsPage: React.FC = () => {
                     </select>
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label fw-semibold">ID Client</label>
-                    <input type="number" className="form-control" value={form.customerId ?? ''}
-                      placeholder="Optionnel"
-                      onChange={e => setForm(f => ({ ...f, customerId: e.target.value ? Number(e.target.value) : undefined }))} />
+                    <label className="form-label fw-semibold">Nom du client {!editId && '*'}</label>
+                    <input className="form-control" value={form.guestName ?? ''} placeholder="Prénom Nom"
+                      onChange={e => setForm(f => ({ ...f, guestName: e.target.value }))} />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">E-mail du client</label>
+                    <input type="email" className="form-control" value={form.guestEmail ?? ''} placeholder="Pour la confirmation et la facture"
+                      onChange={e => setForm(f => ({ ...f, guestEmail: e.target.value }))} />
                   </div>
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">Date d'arrivée *</label>
@@ -470,8 +484,11 @@ const ReservationsPage: React.FC = () => {
                   <div className="col-md-4">
                     <label className="form-label fw-semibold">Prix total (DT)</label>
                     <input type="number" className="form-control" min={0} value={form.totalPrice ?? ''}
+                      readOnly={!editId}
                       onChange={e => setForm(f => ({ ...f, totalPrice: Number(e.target.value) }))} />
-                    <small className="text-muted">Calculé avec tarifs week-end et saisons</small>
+                    <small className="text-muted">
+                      {editId ? 'Modifiable pour un geste commercial' : 'TTC, tarifs week-end et saisons inclus'}
+                    </small>
                   </div>
                   <div className="col-md-4">
                     <label className="form-label fw-semibold">Acompte (DT)</label>

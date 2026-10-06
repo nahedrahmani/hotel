@@ -12,6 +12,7 @@ import tn.esprit.rhservice.entity.Pointage;
 import tn.esprit.rhservice.enums.StatutPointage;
 import tn.esprit.rhservice.repository.EmployeRepository;
 import tn.esprit.rhservice.repository.PointageRepository;
+import tn.esprit.rhservice.repository.ShiftRepository;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -25,6 +26,10 @@ public class PointageService {
 
     private final PointageRepository pointageRepository;
     private final EmployeRepository employeRepository;
+    private final ShiftRepository shiftRepository;
+
+    /** Minutes of tolerance before an arrival counts as late. */
+    private static final int TOLERANCE_MINUTES = 5;
 
     public List<PointageDTO> getByDate(LocalDate date) {
         return pointageRepository.findByDate(date).stream().map(this::toDTO).toList();
@@ -44,10 +49,13 @@ public class PointageService {
                 .orElseThrow(() -> new EntityNotFoundException("Employé introuvable: " + employeId));
 
         LocalTime now = LocalTime.now();
-        LocalTime heureNormale = LocalTime.of(8, 0);
-        int retard = now.isAfter(heureNormale)
-                ? (int) java.time.Duration.between(heureNormale, now).toMinutes()
-                : 0;
+        // Late compared with the start of the employee's own shift today; no shift, no lateness
+        int retard = shiftRepository.findByEmployeIdAndDateBetween(employeId, today, today).stream()
+                .map(s -> s.getHeureDebut())
+                .min(LocalTime::compareTo)
+                .filter(debut -> now.isAfter(debut.plusMinutes(TOLERANCE_MINUTES)))
+                .map(debut -> (int) java.time.Duration.between(debut, now).toMinutes())
+                .orElse(0);
 
         Pointage pointage = Pointage.builder()
                 .employe(employe).date(today).heureEntree(now)

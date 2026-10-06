@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Trash2, Upload, FileText, History, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Trash2, Upload, FileText, History, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   clientService,
   type ClientProfile,
@@ -8,7 +8,6 @@ import {
   type BedType,
   type DocumentType,
 } from '../../services/clientService';
-import keycloak from '../../config/keycloak';
 import { hasAnyRole } from '../../config/access';
 import { apiError } from '../../utils/api';
 import { useConfirm } from '../../components/useConfirm';
@@ -77,11 +76,6 @@ const ClientsPage: React.FC = () => {
     setHistory(histRes.status === 'fulfilled' ? histRes.value.data : []);
   };
 
-  const openCreate = () => {
-    setForm({ ...EMPTY_PROFILE, keycloakId: keycloak.tokenParsed?.sub ?? '' });
-    setShowForm(true);
-  };
-
   const openEdit = (c: ClientProfile) => {
     setForm({ ...c });
     setShowForm(true);
@@ -138,11 +132,12 @@ const ClientsPage: React.FC = () => {
   return (
     <div className="container-fluid p-4">
       {confirmDialog}
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="fw-bold mb-0">Fiches clients</h2>
-        <button className="btn btn-dark d-flex align-items-center gap-2" onClick={openCreate}>
-          <Plus size={18} /> Nouveau client
-        </button>
+      <div className="mb-4">
+        <h2 className="fw-bold mb-1">Fiches clients</h2>
+        <p className="text-muted mb-0">
+          Une fiche est créée quand le client renseigne son profil en ligne. La réception la complète
+          (préférences, notes internes, pièces d'identité).
+        </p>
       </div>
 
       {error && <div className="alert alert-danger">{error}</div>}
@@ -166,7 +161,7 @@ const ClientsPage: React.FC = () => {
                     <div>
                       <div className="fw-semibold">{c.firstName} {c.lastName}</div>
                       <small className={selected?.keycloakId === c.keycloakId ? 'text-white-50' : 'text-muted'}>
-                        {c.email || c.nationality || c.keycloakId.slice(0, 12) + '…'}
+                        {c.email || c.nationality || 'Coordonnées non renseignées'}
                       </small>
                     </div>
                     {isAdmin && (
@@ -348,13 +343,12 @@ const ClientsPage: React.FC = () => {
           <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div className="modal-content border-0 shadow">
               <div className="modal-header border-0">
-                <h5 className="modal-title fw-bold">{form.id ? 'Modifier le client' : 'Nouveau client'}</h5>
+                <h5 className="modal-title fw-bold">Modifier la fiche client</h5>
                 <button className="btn btn-sm btn-light" onClick={() => setShowForm(false)}><X size={14} /></button>
               </div>
               <div className="modal-body">
                 <div className="row g-3">
                   {[
-                    ['keycloakId', 'ID Keycloak *', 'text', !form.id],
                     ['firstName', 'Prénom', 'text', false],
                     ['lastName', 'Nom', 'text', false],
                     ['email', 'Email', 'email', false],

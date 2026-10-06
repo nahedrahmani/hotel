@@ -15,7 +15,7 @@ const PAGE_ROLES: Record<string, string[]> = {
   menage: STAFF_ROLES,
   chambres: STAFF_ROLES,
   calendar: STAFF_ROLES,
-  clients: ['ADMIN', 'STAFF'],
+  clients: STAFF_ROLES,
   demandes: STAFF_ROLES,
   checkinout: STAFF_ROLES,
   'payment/factures': STAFF_ROLES,

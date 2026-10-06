@@ -21,7 +21,7 @@ public class CheckInOutController {
     private final ConsoStockService consoStockService;
 
     @PostMapping("/checkin/{reservationId}")
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
     public CheckInRecord checkIn(@PathVariable Long reservationId,
                                   @RequestBody Map<String, Object> body) {
         String keycloakId    = (String)  body.get("keycloakId");
@@ -31,7 +31,7 @@ public class CheckInOutController {
     }
 
     @PostMapping("/checkout/{reservationId}")
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
     public CheckInRecord checkOut(@PathVariable Long reservationId,
                                    @RequestBody Map<String, Object> body) {
         String keycloakId = (String) body.get("keycloakId");
@@ -53,7 +53,7 @@ public class CheckInOutController {
 
     @PostMapping("/conso/{reservationId}")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
     public ConsoStock enregistrerConso(@PathVariable Long reservationId,
                                         @RequestBody Map<String, Object> body) {
         Long chambreId  = Long.valueOf(body.get("chambreId").toString());

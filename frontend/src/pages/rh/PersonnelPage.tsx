@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit, Trash2, X, Search } from 'lucide-react';
 import {
   rhService, type Employe, type Poste, type Departement, type StatutEmploye,
-  POSTE_LABELS, DEPT_LABELS, STATUT_EMPLOYE_COLORS,
+  POSTE_LABELS, DEPT_LABELS, STATUT_EMPLOYE_COLORS, STATUT_EMPLOYE_LABELS,
 } from '../../services/rhService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
 import { apiError } from '../../utils/api';
@@ -81,7 +81,7 @@ export default function PersonnelPage() {
   const handleDelete = async (id: number) => {
     if (!(await confirm('Supprimer cet employé ?', { danger: true }))) return;
     try { await rhService.deleteEmploye(id); load(); }
-    catch { setError('Erreur lors de la suppression.'); }
+    catch (e) { setError(apiError(e, 'Erreur lors de la suppression.')); }
   };
 
   return (
@@ -113,7 +113,7 @@ export default function PersonnelPage() {
           </select>
           <select className="form-select w-auto" value={filterStatut} onChange={e => setFilterStatut(e.target.value as typeof filterStatut)}>
             <option value="">Tous les statuts</option>
-            {STATUTS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+            {STATUTS.map(s => <option key={s} value={s}>{STATUT_EMPLOYE_LABELS[s]}</option>)}
           </select>
         </div>
       </div>
@@ -144,7 +144,7 @@ export default function PersonnelPage() {
                     <td>{DEPT_LABELS[e.departement]}</td>
                     <td className="text-muted small">{e.email}</td>
                     <td className="text-muted small">{e.telephone ?? '—'}</td>
-                    <td><span className={`badge bg-${STATUT_EMPLOYE_COLORS[e.statut ?? 'ACTIF']}`}>{e.statut ?? 'ACTIF'}</span></td>
+                    <td><span className={`badge bg-${STATUT_EMPLOYE_COLORS[e.statut ?? 'ACTIF']}`}>{STATUT_EMPLOYE_LABELS[e.statut ?? 'ACTIF']}</span></td>
                     <td>
                       <div className="d-flex gap-2">
                         {canManage && <button className="btn btn-sm btn-outline-dark" aria-label="Modifier" onClick={() => openEdit(e)}><Edit size={14} /></button>}

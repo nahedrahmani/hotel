@@ -21,7 +21,6 @@ public class CheckInOutService {
     private final CheckInRecordRepository recordRepository;
     private final ReservationClient reservationClient;
     private final PaymentClient paymentClient;
-    private final ConsoStockService consoStockService;
 
     public CheckInRecord checkIn(Long reservationId, String keycloakId,
                                   Boolean documentVerified, String notes) {
@@ -38,7 +37,7 @@ public class CheckInOutService {
 
         CheckInRecord record = CheckInRecord.builder()
                 .reservationId(reservationId)
-                .keycloakId(keycloakId)
+                .keycloakId(guestOf(reservation, keycloakId))
                 .chambreId(reservation.getRoomId())
                 .type(CheckInRecord.RecordType.CHECKIN)
                 .actualTime(LocalDateTime.now())
@@ -62,7 +61,7 @@ public class CheckInOutService {
 
         CheckInRecord record = CheckInRecord.builder()
                 .reservationId(reservationId)
-                .keycloakId(keycloakId)
+                .keycloakId(guestOf(reservation, keycloakId))
                 .chambreId(reservation.getRoomId())
                 .type(CheckInRecord.RecordType.CHECKOUT)
                 .actualTime(LocalDateTime.now())
@@ -71,10 +70,15 @@ public class CheckInOutService {
                 .build();
         CheckInRecord saved = recordRepository.save(record);
 
-        // Record stock consumption for minibar/room products, then finalize invoice
-        consoStockService.enregistrerConsoParDefaut(reservationId, reservation.getRoomId());
+        // Minibar extras were billed by reception before this point; the invoice is now final
         finaliserFacture(reservationId);
         return saved;
+    }
+
+    /** The booking's guest account; empty for a desk booking made for a guest without an account. */
+    private static String guestOf(ReservationClient.ReservationDTO reservation, String fallback) {
+        if (reservation.getKeycloakId() != null) return reservation.getKeycloakId();
+        return fallback != null ? fallback : "";
     }
 
     public List<CheckInRecord> getByReservation(Long reservationId) {

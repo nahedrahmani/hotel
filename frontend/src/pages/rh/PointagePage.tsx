@@ -6,8 +6,9 @@ import {
 } from '../../services/rhService';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
 import { apiError } from '../../utils/api';
+import { isoDate } from '../../utils/format';
 
-const today = () => new Date().toISOString().split('T')[0];
+const today = () => isoDate(new Date());
 
 const STATUTS: StatutPointage[] = ['PRESENT', 'ABSENT', 'RETARD', 'EN_CONGE', 'JOUR_FERIE'];
 const STATUT_LABELS: Record<StatutPointage, string> = {
@@ -141,8 +142,8 @@ export default function PointagePage() {
                           ? <span className={`badge bg-${STATUT_POINTAGE_COLORS[p.statut ?? 'PRESENT']}`}>{STATUT_LABELS[p.statut ?? 'PRESENT']}</span>
                           : <span className="badge bg-secondary">Non pointé</span>}
                       </td>
-                      <td className="text-muted">{p?.heureEntree ?? '—'}</td>
-                      <td className="text-muted">{p?.heureSortie ?? '—'}</td>
+                      <td className="text-muted">{p?.heureEntree?.slice(0, 5) ?? '—'}</td>
+                      <td className="text-muted">{p?.heureSortie?.slice(0, 5) ?? '—'}</td>
                       <td>{p?.retardMinutes ? <span className="text-warning fw-semibold">{p.retardMinutes} min</span> : '—'}</td>
                       <td>
                         <div className="d-flex gap-2">

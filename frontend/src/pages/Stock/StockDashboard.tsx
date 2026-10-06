@@ -68,7 +68,7 @@ export default function StockDashboard() {
 
       <div className="row g-3 mb-4">
         <div className="col-md-4"><StatCard label="Produits suivis" value={stocks.length} icon={<Package size={20} />} color="dark" /></div>
-        <div className="col-md-4"><StatCard label="En rupture" value={ruptures.length} icon={<AlertTriangle size={20} />} color={ruptures.length ? 'danger' : 'success'} /></div>
+        <div className="col-md-4"><StatCard label="Sous le seuil minimum" value={ruptures.length} icon={<AlertTriangle size={20} />} color={ruptures.length ? 'danger' : 'success'} /></div>
         {canSeeValue && (
           <div className="col-md-4"><StatCard label="Valeur du stock" value={valeur == null ? '—' : formatDT(valeur)} icon={<Wallet size={20} />} color="primary" /></div>
         )}
@@ -103,7 +103,10 @@ export default function StockDashboard() {
                   <td className="py-3 text-muted">{s.quantiteReservee}</td>
                   <td className="py-3 text-muted">{s.emplacement || '—'}</td>
                   <td className="py-3">
-                    <span className={`badge bg-${s.enRupture ? 'danger' : 'success'}`}>{s.enRupture ? 'Rupture' : 'Disponible'}</span>
+                    {/* enRupture means "under the minimum": empty is a rupture, otherwise stock is low */}
+                    <span className={`badge bg-${s.quantiteDisponible <= 0 ? 'danger' : s.enRupture ? 'warning text-dark' : 'success'}`}>
+                      {s.quantiteDisponible <= 0 ? 'Rupture' : s.enRupture ? 'Stock bas' : 'Disponible'}
+                    </span>
                   </td>
                 </tr>
               ))}
