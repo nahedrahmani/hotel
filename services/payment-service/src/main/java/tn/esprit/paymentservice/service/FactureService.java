@@ -122,6 +122,26 @@ public class FactureService {
         return toDTO(factureRepository.save(facture));
     }
 
+    /** Adds an extra (minibar, room service) to the open stay invoice of a reservation. */
+    public FactureDTO ajouterLigneSejour(Long reservationId, LigneFactureDTO dto) {
+        Facture facture = factureRepository.findByReservationId(reservationId).stream()
+                .filter(f -> f.getStatut() != StatutFacture.PAYEE && f.getStatut() != StatutFacture.ANNULEE)
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Aucune facture ouverte pour la réservation " + reservationId));
+        facture.getLignes().add(LigneFacture.builder()
+                .facture(facture)
+                .description(dto.getDescription())
+                .quantite(dto.getQuantite())
+                .prixUnitaire(dto.getPrixUnitaire())
+                .tauxTva(dto.getTauxTva())
+                .prixTtc(dto.getPrixTtc())
+                .build());
+        factureRepository.save(facture);
+        mettreAJourStatut(facture.getId());
+        return toDTO(findOrThrow(facture.getId()));
+    }
+
     public FactureDTO emettre(Long id) {
         Facture facture = findOrThrow(id);
         if (facture.getLignes().isEmpty()) {
@@ -133,8 +153,14 @@ public class FactureService {
         facture.setStatut(StatutFacture.EMISE);
         if (facture.getDateEcheance() == null) {
             facture.setDateEcheance(LocalDate.now().plusDays(30));
+        } else if (facture.getDateEcheance().isBefore(LocalDate.now())) {
+            // A stay invoice is due at check-in but issued at check-out: it cannot be late on issue
+            facture.setDateEcheance(LocalDate.now());
         }
-        return toDTO(factureRepository.save(facture));
+        factureRepository.save(facture);
+        // Payments taken before issuing (a deposit) count straight away
+        mettreAJourStatut(id);
+        return toDTO(findOrThrow(id));
     }
 
     public FactureDTO annuler(Long id) {

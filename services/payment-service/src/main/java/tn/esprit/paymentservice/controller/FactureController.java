@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import tn.esprit.paymentservice.dto.FactureDTO;
+import tn.esprit.paymentservice.dto.LigneFactureDTO;
 import tn.esprit.paymentservice.enums.StatutFacture;
 import tn.esprit.paymentservice.service.FactureService;
 
@@ -52,6 +53,13 @@ public class FactureController {
         return factureService.getByReservation(reservationId);
     }
 
+    // Extras consumed during the stay (minibar) are billed by reception before check-out
+    @PostMapping("/reservation/{reservationId}/lignes")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    public FactureDTO ajouterLigneSejour(@PathVariable Long reservationId, @RequestBody LigneFactureDTO ligne) {
+        return factureService.ajouterLigneSejour(reservationId, ligne);
+    }
+
     @GetMapping("/search")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
     public List<FactureDTO> search(@RequestParam String q) {
@@ -79,8 +87,9 @@ public class FactureController {
         return factureService.update(id, dto);
     }
 
+    // Reception issues the stay invoice when the guest checks out
     @PatchMapping("/{id}/emettre")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
     public FactureDTO emettre(@PathVariable Long id) {
         return factureService.emettre(id);
     }
