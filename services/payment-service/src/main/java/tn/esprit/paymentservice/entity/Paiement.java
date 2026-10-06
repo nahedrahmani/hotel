@@ -3,6 +3,8 @@ package tn.esprit.paymentservice.entity;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import tn.esprit.paymentservice.enums.MethodePaiement;
 import tn.esprit.paymentservice.enums.StatutPaiement;
 
@@ -30,7 +32,10 @@ public class Paiement {
     @Column(precision = 10, scale = 3)
     private BigDecimal montant;
 
+    // Plain text, not a database enum: a new payment method must not need a schema change
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(length = 30)
     @NotNull(message = "La méthode de paiement est obligatoire")
     private MethodePaiement methodePaiement;
 

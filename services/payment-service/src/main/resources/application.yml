@@ -24,10 +24,15 @@ spring:
 server:
   port: 8087
 
-stripe:
-  secret-key: ${STRIPE_SECRET_KEY:sk_test_REPLACE_ME}
-  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_REPLACE_ME}
-  currency: ${STRIPE_CURRENCY:tnd}
+konnect:
+  api-key: ${KONNECT_API_KEY:}
+  wallet-id: ${KONNECT_WALLET_ID:}
+  base-url: ${KONNECT_BASE_URL:https://api.sandbox.konnect.network/api/v2}
+  return-url: ${KONNECT_RETURN_URL:http://localhost:5173/dashboard/mes-reservations}
+  webhook-url: ${KONNECT_WEBHOOK_URL:}
+  # live: Konnect's real payment page; simulation: the app's own page, for demos
+  mode: ${KONNECT_MODE:live}
+  simulation-url: ${KONNECT_SIMULATION_URL:http://localhost:5173/dashboard/paiement-simulation}
 
 management:
   endpoints:

@@ -5,12 +5,11 @@ import "./Headers.css";
 import images from "../../assets";
 import UserLayout from "../../layouts/UserLayout.tsx";
 import { chambreService, type Chambre, ROOM_TYPE_LABELS, roomPhoto } from '../../services/chambreService';
-import { STRIPE_ENABLED } from '../../services/paymentService';
-import { formatDT } from '../../utils/format';
+import { formatDT, isoDate } from '../../utils/format';
 
 const isoDay = (offset: number) => {
     const d = new Date(); d.setDate(d.getDate() + offset);
-    return d.toISOString().split('T')[0];
+    return isoDate(d);
 };
 
 /** Searches this hotel's rooms: hands the dates to the booking page, which runs the search. */
@@ -93,9 +92,7 @@ const SERVICES = [
         title: 'Demandes à la réception',
         text: 'Ménage, room service, serviettes, réveil, transport : envoyez votre demande depuis Mes réservations et suivez son traitement.',
     },
-    STRIPE_ENABLED
-        ? { icon: <CreditCard size={22} />, title: 'Paiement en ligne', text: 'Réglez votre facture par carte, en dinars, depuis votre espace client.' }
-        : { icon: <CreditCard size={22} />, title: 'Facture dans votre espace', text: 'Consultez votre facture en ligne et réglez-la à la réception.' },
+    { icon: <CreditCard size={22} />, title: 'Facture dans votre espace', text: 'Consultez votre facture en ligne et réglez-la par carte ou wallet, en dinars, ou à la réception.' },
     {
         icon: <Receipt size={22} />,
         title: 'Prix TTC',

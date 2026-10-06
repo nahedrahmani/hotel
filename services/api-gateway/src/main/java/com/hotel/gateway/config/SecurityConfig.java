@@ -36,9 +36,7 @@ public class SecurityConfig {
                         .pathMatchers("/api/chambre/**").authenticated()
                         // Stock is internal — always requires auth
                         .pathMatchers("/api/stock/**").authenticated()
-                        // Chat REST requires auth; WebSocket upgrade cannot carry Bearer headers
                         .pathMatchers("/api/chats/**").authenticated()
-                        .pathMatchers("/ws-chat/**").permitAll()
                         // Transport reads are public; mutations require auth
                         .pathMatchers(HttpMethod.GET, "/api/transports/**").permitAll()
                         .pathMatchers("/api/transports/**").authenticated()
@@ -50,6 +48,8 @@ public class SecurityConfig {
                         .pathMatchers("/api/reservations/**").authenticated()
                         .pathMatchers("/api/users/**").authenticated()
                         .pathMatchers("/api/rh/**").authenticated()
+                        // Konnect calls back without a login; payment-service checks the payment with Konnect
+                        .pathMatchers(HttpMethod.GET, "/api/payment/konnect/webhook").permitAll()
                         .pathMatchers("/api/payment/**").authenticated()
                         .anyExchange().authenticated()
                 )

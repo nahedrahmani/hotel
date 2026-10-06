@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { X, FileText, BedDouble, CreditCard, ConciergeBell } from 'lucide-react';
 import {
   reservationService,
@@ -14,14 +14,14 @@ import {
   clientService, type Demande, type DemandeType,
   DEMANDE_TYPE_LABELS, STATUT_LABELS as DEMANDE_STATUT_LABELS, STATUT_COLORS as DEMANDE_STATUT_COLORS,
 } from '../../services/clientService';
-import { STATUT_FACTURE_LABELS, STATUT_FACTURE_COLORS, STRIPE_ENABLED, type StatutFacture, type Facture as FactureComplete } from '../../services/paymentService';
-import StripePaymentModal from '../../components/StripePaymentModal';
+import { paymentService, STATUT_FACTURE_LABELS, STATUT_FACTURE_COLORS, type StatutFacture } from '../../services/paymentService';
 import keycloak from '../../config/keycloak';
 import { apiError } from '../../utils/api';
 import { countNights, formatDate, formatDT, formatStay, nightsLabel } from '../../utils/format';
 
 const ENDED = ['CANCELLED', 'CHECKED_OUT', 'NO_SHOW'];
-const PAYABLE: string[] = ['EMISE', 'PARTIELLEMENT_PAYEE', 'EN_RETARD'];
+// A draft can be prepaid online: payment-service issues it when the money comes in
+const PAYABLE: string[] = ['BROUILLON', 'EMISE', 'PARTIELLEMENT_PAYEE', 'EN_RETARD'];
 
 const roomTitle = (r: Reservation) =>
   r.chambre ? `${ROOM_TYPE_LABELS[r.chambre.type] ?? r.chambre.type} · chambre ${r.chambre.numero}` : `Réservation n° ${r.id}`;
@@ -49,7 +49,11 @@ const MyReservationsPage: React.FC = () => {
   const [factures, setFactures]               = useState<Facture[]>([]);
   const [loadingFactures, setLoadingFactures] = useState(false);
   const [facturesError, setFacturesError]     = useState('');
-  const [toPay, setToPay]                     = useState<Facture | null>(null);
+  const [paying, setPaying]                   = useState<number | null>(null);
+  const [onlinePayment, setOnlinePayment]     = useState(false);
+  // Konnect sends the guest back here with ?paiement=ok|echec&payment_ref=…
+  const [params, setParams]                   = useSearchParams();
+  const [payResult, setPayResult]             = useState<{ ok: boolean; text: string } | null>(null);
 
   // Requests to the reception (ménage, room service...) during a confirmed or ongoing stay
   const [demandes, setDemandes]           = useState<Demande[]>([]);
@@ -131,12 +135,37 @@ const MyReservationsPage: React.FC = () => {
 
   const openFactures = (r: Reservation) => { setFactureTarget(r); loadFactures(r); };
 
-  // The payment dialog takes the payment-service invoice shape; only these fields are used
-  const asFactureComplete = (f: Facture): FactureComplete => ({
-    id: f.id, numero: f.numero, clientNom: f.clientNom, dateEmission: f.dateEmission,
-    statut: f.statut as StatutFacture, totalTTC: f.totalTTC, montantRestant: f.montantRestant,
-    clientEmail: keycloak.tokenParsed?.email, lignes: [],
-  });
+  // Online payment is offered only when the hotel has set up its Konnect keys
+  useEffect(() => {
+    paymentService.onlinePaymentStatus().then(r => setOnlinePayment(r.data.enabled)).catch(() => setOnlinePayment(false));
+  }, []);
+
+  const payOnline = async (factureId: number) => {
+    setPaying(factureId);
+    setFacturesError('');
+    try {
+      const res = await paymentService.startOnlinePayment(factureId);
+      window.location.assign(res.data.payUrl);
+    } catch (e) {
+      setFacturesError(apiError(e, 'Le paiement en ligne n\'a pas pu démarrer.'));
+      setPaying(null);
+    }
+  };
+
+  // Back from Konnect: the payment counts only once Konnect confirms it to payment-service
+  useEffect(() => {
+    const result = params.get('paiement');
+    const ref = params.get('payment_ref');
+    if (!result) return;
+    setParams({}, { replace: true });
+    if (result !== 'ok' || !ref) {
+      setPayResult({ ok: false, text: 'Le paiement n\'a pas abouti. Aucun montant n\'a été débité.' });
+      return;
+    }
+    paymentService.confirmOnlinePayment(ref)
+      .then(r => setPayResult({ ok: true, text: `Paiement de ${formatDT(r.data.montant)} reçu, merci. Votre facture est à jour.` }))
+      .catch(e => setPayResult({ ok: false, text: apiError(e, 'Le paiement n\'a pas pu être confirmé.') }));
+  }, [params, setParams]);
 
   if (!keycloakId) {
     return <div className="container p-5 text-center text-muted">Connectez-vous pour voir vos réservations.</div>;
@@ -154,6 +183,12 @@ const MyReservationsPage: React.FC = () => {
       </div>
 
       {error && <div className="alert alert-danger py-2">{error}</div>}
+      {payResult && (
+        <div className={`alert ${payResult.ok ? 'alert-success' : 'alert-danger'} py-2 d-flex justify-content-between align-items-center`}>
+          <span>{payResult.text}</span>
+          <button className="btn btn-sm btn-light" onClick={() => setPayResult(null)} aria-label="Fermer"><X size={14} /></button>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-5"><div className="spinner-border" /></div>
@@ -310,7 +345,7 @@ const MyReservationsPage: React.FC = () => {
         </div>
       )}
 
-      {factureTarget && !toPay && (
+      {factureTarget && (
         <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content border-0 shadow">
@@ -340,9 +375,11 @@ const MyReservationsPage: React.FC = () => {
                             {STATUT_FACTURE_LABELS[statut] ?? f.statut}
                           </span>
                           <div className="small">{formatDT(f.totalTTC)}</div>
-                          {PAYABLE.includes(f.statut) && Number(f.montantRestant) > 0 && (STRIPE_ENABLED ? (
-                            <button className="btn btn-sm btn-dark mt-2 d-flex align-items-center gap-1 ms-auto" onClick={() => setToPay(f)}>
-                              <CreditCard size={13} /> Payer {formatDT(f.montantRestant)}
+                          {PAYABLE.includes(f.statut) && Number(f.montantRestant) > 0 && (onlinePayment ? (
+                            <button className="btn btn-sm btn-dark mt-2 d-flex align-items-center gap-1 ms-auto"
+                              onClick={() => payOnline(f.id)} disabled={paying !== null}>
+                              {paying === f.id ? <span className="spinner-border spinner-border-sm" /> : <CreditCard size={13} />}
+                              Payer en ligne {formatDT(f.montantRestant)}
                             </button>
                           ) : (
                             <div className="text-muted small mt-1">Reste {formatDT(f.montantRestant)}, à régler à la réception</div>
@@ -358,14 +395,6 @@ const MyReservationsPage: React.FC = () => {
         </div>
       )}
 
-      {toPay && (
-        <StripePaymentModal
-          facture={asFactureComplete(toPay)}
-          montant={Number(toPay.montantRestant)}
-          onClose={() => setToPay(null)}
-          onSuccess={() => { setToPay(null); if (factureTarget) loadFactures(factureTarget); }}
-        />
-      )}
     </div>
   );
 };

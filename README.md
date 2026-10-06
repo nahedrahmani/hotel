@@ -15,7 +15,7 @@ Hotel management platform built as Spring Boot microservices with a React (Vite 
 | reservation-service | 8083 | Reservations, email notifications |
 | client-service | 8084 | Clients (Cloudinary uploads) |
 | rh-service | 8086 | Human resources |
-| payment-service | 8087 | Stripe payments |
+| payment-service | 8087 | Invoices and payments (online with Konnect) |
 | user-service | 3001 | Users (Node.js + MongoDB) |
 | keycloak | 9999 | Auth, realm `hotel` (imported from `keycloak/hotel-realm.json`) |
 | rabbitmq | 5673 / 15673 | Event bus / management UI |

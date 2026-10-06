@@ -5,16 +5,12 @@ const BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080') + '/
 // Token attached and refreshed by the shared interceptor
 const api = withAuth(axios.create({ baseURL: BASE }));
 
-export const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '';
-
-/** Card payment is offered only once a real Stripe key replaces the .env placeholder. */
-export const STRIPE_ENABLED = /^pk_(test|live)_/.test(STRIPE_PUBLISHABLE_KEY) && !STRIPE_PUBLISHABLE_KEY.includes('REPLACE');
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type StatutFacture = 'BROUILLON' | 'EMISE' | 'PARTIELLEMENT_PAYEE' | 'PAYEE' | 'EN_RETARD' | 'ANNULEE';
 export type TypeFacture = 'HEBERGEMENT' | 'RESTAURATION' | 'SERVICE' | 'TRANSPORT' | 'DIVERS';
-export type MethodePaiement = 'CARTE_BANCAIRE' | 'PAYPAL' | 'ESPECES' | 'VIREMENT_BANCAIRE' | 'CHEQUE';
+export type MethodePaiement = 'CARTE_BANCAIRE' | 'PAYPAL' | 'ESPECES' | 'VIREMENT_BANCAIRE' | 'CHEQUE' | 'KONNECT';
 export type StatutPaiement = 'EN_ATTENTE' | 'CONFIRME' | 'REJETE' | 'REMBOURSE';
 
 export interface LigneFacture {
@@ -114,7 +110,7 @@ export const TYPE_FACTURE_LABELS: Record<TypeFacture, string> = {
 
 export const METHODE_LABELS: Record<MethodePaiement, string> = {
   CARTE_BANCAIRE: 'Carte bancaire', PAYPAL: 'PayPal',
-  ESPECES: 'Espèces', VIREMENT_BANCAIRE: 'Virement', CHEQUE: 'Chèque',
+  ESPECES: 'Espèces', VIREMENT_BANCAIRE: 'Virement', CHEQUE: 'Chèque', KONNECT: 'En ligne (Konnect)',
 };
 
 // ── API calls ──────────────────────────────────────────────────────────────
@@ -139,9 +135,17 @@ export const paymentService = {
   enregistrerPaiement: (dto: Paiement) => api.post<Paiement>('/paiements', dto),
   rembourserPaiement: (id: number) => api.patch<Paiement>(`/paiements/${id}/rembourser`),
 
-  // Stripe card payment (amount is checked again server-side against the PaymentIntent)
-  createStripeIntent: (factureId: number, montant: number) =>
-    api.post<{ clientSecret: string; paymentIntentId: string }>('/stripe/create-intent', { factureId, montant }),
+  // Online payment with Konnect: the guest pays on Konnect's page, then the payment is
+  // confirmed with Konnect by payment-service before the invoice counts it
+  onlinePaymentStatus: () => api.get<{ enabled: boolean; simulation: boolean }>('/konnect/status'),
+  // Demo mode only: the app's own stand-in for Konnect's payment page
+  getSimulatedPayment: (paymentRef: string) =>
+    api.get<{ status: string; amount: number; description: string }>(`/konnect/simulation/${paymentRef}`),
+  finishSimulatedPayment: (paymentRef: string, paid: boolean) =>
+    api.post<{ redirectUrl: string }>(`/konnect/simulation/${paymentRef}`, { paid }),
+  startOnlinePayment: (factureId: number) =>
+    api.post<{ payUrl: string; paymentRef: string }>('/konnect/init', { factureId }),
+  confirmOnlinePayment: (paymentRef: string) => api.post<Paiement>('/konnect/confirm', { paymentRef }),
 
   // Rapports
   getRapport: (debut?: string, fin?: string) => {

@@ -9,7 +9,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import tn.esprit.paymentservice.dto.PaiementDTO;
 import tn.esprit.paymentservice.service.PaiementService;
-import tn.esprit.paymentservice.stripe.StripeService;
+import tn.esprit.paymentservice.konnect.KonnectService;
 
 import java.util.List;
 
@@ -20,7 +20,7 @@ import java.util.List;
 public class PaiementController {
 
     private final PaiementService paiementService;
-    private final StripeService stripeService;
+    private final KonnectService konnectService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
@@ -40,8 +40,8 @@ public class PaiementController {
     public PaiementDTO enregistrer(@Valid @RequestBody PaiementDTO dto, Authentication authentication) {
         boolean staff = authentication.getAuthorities().stream()
                 .anyMatch(a -> List.of("ROLE_ADMIN", "ROLE_MANAGER", "ROLE_STAFF").contains(a.getAuthority()));
-        // Staff record cash/transfer payments at the desk; guests only through a verified Stripe payment
-        return staff ? paiementService.enregistrer(dto) : stripeService.enregistrerPaiementVerifie(dto);
+        // Staff record cash/transfer payments at the desk; guests only through a payment Konnect confirms
+        return staff ? paiementService.enregistrer(dto) : konnectService.confirm(dto.getReference());
     }
 
     @PatchMapping("/{id}/rembourser")

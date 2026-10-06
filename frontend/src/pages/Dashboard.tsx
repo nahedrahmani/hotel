@@ -3,10 +3,8 @@ import React from "react";
 import { Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
 import { canOpen, isStaff } from "../config/access";
 import Layout from "./../layouts/layout.tsx";
-import { AnnoncesPage } from './hebergement/annonces.tsx';
 import { CalendarPage } from '../calendar';
 import { MessagesPage } from '../MessagesPage';
-import CreationHebergement from "./hebergement/CreationHebergement.tsx";
 import StockDashboard from "./Stock/StockDashboard.tsx";
 import GestionProduits from "./Stock/GestionProduits.tsx";
 import MouvementsStock from "./Stock/MouvementsStock.tsx";
@@ -14,6 +12,7 @@ import ChambreStockManager from "./Stock/ChambreStockManager.tsx";
 import ReservationsPage from "./reservations/ReservationsPage.tsx";
 import OccupancyPage from "./reservations/OccupancyPage.tsx";
 import MyReservationsPage from "./reservations/MyReservationsPage.tsx";
+import SimulatedPaymentPage from "./payment/SimulatedPaymentPage.tsx";
 import HousekeepingPage from "./reservations/HousekeepingPage.tsx";
 import ChambresPage from "./reservations/ChambresPage.tsx";
 import AnalyticsPage from "./analytics/AnalyticsPage.tsx";
@@ -53,15 +52,12 @@ const Dashboard: React.FC = () => {
             <Routes>
                 {/* /dashboard itself: staff land on reservations, clients on their own bookings */}
                 <Route index element={<Navigate to={home} replace />} />
-                {/* Hébergement */}
-                <Route path="annonces" element={<AnnoncesPage />} />
                 <Route path="calendar" element={<CalendarPage />} />
                 <Route path="messages" element={<MessagesPage />} />
-                <Route path="hebergement-maison" element={<CreationHebergement />} />
-                <Route path="hebergement-maison/:id" element={<CreationHebergement />} />
                 <Route path="reservations" element={<ReservationsPage />} />
                 <Route path="occupation" element={<OccupancyPage />} />
                 <Route path="mes-reservations" element={<MyReservationsPage />} />
+                <Route path="paiement-simulation" element={<SimulatedPaymentPage />} />
                 <Route path="menage" element={<HousekeepingPage />} />
                 <Route path="chambres" element={<ChambresPage />} />
                 <Route path="analytique" element={<AnalyticsPage />} />

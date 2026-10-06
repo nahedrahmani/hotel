@@ -24,8 +24,8 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // Stripe webhook is called by Stripe's servers — no JWT possible
-                .requestMatchers(HttpMethod.POST, "/api/payment/stripe/webhook").permitAll()
+                // Konnect's servers call the webhook without a login; the payment is checked with Konnect
+                .requestMatchers(HttpMethod.GET, "/api/payment/konnect/webhook").permitAll()
                 // Actuator health check
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 // Everything else requires authentication (fine-grained via @PreAuthorize)

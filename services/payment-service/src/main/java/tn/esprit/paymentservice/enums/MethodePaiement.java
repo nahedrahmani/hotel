@@ -5,5 +5,7 @@ public enum MethodePaiement {
     PAYPAL,
     ESPECES,
     VIREMENT_BANCAIRE,
-    CHEQUE
+    CHEQUE,
+    /** Online through the Konnect gateway (card, wallet, e-DINAR) */
+    KONNECT
 }

@@ -12,8 +12,6 @@
   "dependencies": {
     "@react-keycloak/web": "^3.4.0",
     "@stomp/stompjs": "^7.0.0",
-    "@stripe/react-stripe-js": "^6.5.0",
-    "@stripe/stripe-js": "^9.7.0",
     "axios": "^1.12.2",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",

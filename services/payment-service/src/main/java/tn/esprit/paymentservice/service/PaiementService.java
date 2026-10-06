@@ -38,7 +38,7 @@ public class PaiementService {
     }
 
     public PaiementDTO enregistrer(PaiementDTO dto) {
-        // Idempotency: Stripe webhooks can fire more than once for the same intent.
+        // Idempotency: the gateway's return page and webhook can both report the same payment.
         // If a payment with this reference already exists, return it unchanged.
         if (dto.getReference() != null) {
             Optional<Paiement> existing = paiementRepository.findByReference(dto.getReference());
@@ -72,7 +72,13 @@ public class PaiementService {
                 .note(dto.getNote())
                 .build();
 
+        // Taking money on a draft (online payment before the stay, deposit) issues it
+        if (facture.getStatut() == StatutFacture.BROUILLON) {
+            factureService.emettre(facture.getId());
+        }
         paiementRepository.save(paiement);
+        // Same transaction: the invoice's payment list must include it for the new balance
+        facture.getPaiements().add(paiement);
         factureService.mettreAJourStatut(facture.getId());
 
         return toDTO(paiement);
@@ -97,6 +103,7 @@ public class PaiementService {
             case ESPECES -> "ESP";
             case VIREMENT_BANCAIRE -> "VIR";
             case CHEQUE -> "CHQ";
+            case KONNECT -> "KON";
         };
         return prefix + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
     }

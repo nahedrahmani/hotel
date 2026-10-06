@@ -3,24 +3,23 @@ import { Plus, X, Search, Send, Ban, Trash2, CreditCard } from 'lucide-react';
 import {
   paymentService, type Facture, type LigneFacture, type StatutFacture,
   type TypeFacture, type MethodePaiement,
-  STATUT_FACTURE_COLORS, STATUT_FACTURE_LABELS, TYPE_FACTURE_LABELS, METHODE_LABELS, montantsLigne, STRIPE_ENABLED,
+  STATUT_FACTURE_COLORS, STATUT_FACTURE_LABELS, TYPE_FACTURE_LABELS, METHODE_LABELS, montantsLigne,
 } from '../../services/paymentService';
-import StripePaymentModal from '../../components/StripePaymentModal';
 import MethodeIcon from '../../components/MethodeIcon';
 import { hasAnyRole, MANAGEMENT_ROLES } from '../../config/access';
 import { apiError } from '../../utils/api';
-import { formatDate, formatDT } from '../../utils/format';
+import { formatDate, formatDT, isoDate } from '../../utils/format';
 import { useConfirm } from '../../components/useConfirm';
 
 const TYPES: TypeFacture[] = ['HEBERGEMENT', 'RESTAURATION', 'SERVICE', 'TRANSPORT', 'DIVERS'];
 const STATUTS: StatutFacture[] = ['BROUILLON', 'EMISE', 'PARTIELLEMENT_PAYEE', 'PAYEE', 'EN_RETARD', 'ANNULEE'];
-// Manual (non-card) methods — card goes through Stripe
-const METHODES_MANUELLES: MethodePaiement[] = ['PAYPAL', 'ESPECES', 'VIREMENT_BANCAIRE', 'CHEQUE'];
+// Payments taken at the desk; guests pay online themselves from their bookings (Konnect)
+const METHODES_MANUELLES: MethodePaiement[] = ['CARTE_BANCAIRE', 'ESPECES', 'VIREMENT_BANCAIRE', 'CHEQUE'];
 
 const EMPTY_LIGNE: LigneFacture = { description: '', quantite: 1, prixUnitaire: 0, tauxTva: 19 };
 const EMPTY_FACTURE: Facture = {
   clientNom: '', clientEmail: '', typeFacture: 'HEBERGEMENT',
-  dateEmission: new Date().toISOString().split('T')[0], lignes: [{ ...EMPTY_LIGNE }],
+  dateEmission: isoDate(new Date()), lignes: [{ ...EMPTY_LIGNE }],
 };
 
 export default function FacturesPage() {
@@ -44,7 +43,6 @@ export default function FacturesPage() {
   // Payment flow
   const [selectedFacture, setSelectedFacture] = useState<Facture | null>(null);
   const [showMethodChooser, setShowMethodChooser] = useState(false);
-  const [showStripeModal, setShowStripeModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [paiementForm, setPaiementForm] = useState<{
     montant: number; methodePaiement: MethodePaiement; note: string;
@@ -127,12 +125,8 @@ export default function FacturesPage() {
 
   const pickMethod = (m: MethodePaiement) => {
     setShowMethodChooser(false);
-    if (m === 'CARTE_BANCAIRE') {
-      setShowStripeModal(true);
-    } else {
-      setPaiementForm(p => ({ ...p, methodePaiement: m }));
-      setShowManualModal(true);
-    }
+    setPaiementForm(p => ({ ...p, methodePaiement: m }));
+    setShowManualModal(true);
   };
 
   const handlePaiementManuel = async () => {
@@ -146,8 +140,9 @@ export default function FacturesPage() {
     } finally { setSaving(false); }
   };
 
+  // A draft can take a deposit: payment-service issues it when the payment is recorded
   const isPairable = (f: Facture) =>
-    f.statut === 'EMISE' || f.statut === 'PARTIELLEMENT_PAYEE' || f.statut === 'EN_RETARD';
+    f.statut === 'BROUILLON' || f.statut === 'EMISE' || f.statut === 'PARTIELLEMENT_PAYEE' || f.statut === 'EN_RETARD';
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -235,7 +230,7 @@ export default function FacturesPage() {
                     </td>
                     <td>
                       <div className="d-flex gap-1">
-                        {canManage && f.statut === 'BROUILLON' && (
+                        {f.statut === 'BROUILLON' && (
                           <button className="btn btn-sm btn-success" title="Émettre" onClick={() => handleEmettre(f.id!)}>
                             <Send size={13} />
                           </button>
@@ -384,20 +379,6 @@ export default function FacturesPage() {
                   <strong>{formatDT(selectedFacture.montantRestant ?? 0)}</strong>
                 </div>
 
-                {/* Card via Stripe, only once real Stripe keys are configured */}
-                {STRIPE_ENABLED && (
-                  <button
-                    className="btn btn-dark w-100 d-flex align-items-center gap-3 mb-3 py-3"
-                    onClick={() => pickMethod('CARTE_BANCAIRE')}
-                  >
-                    <MethodeIcon methode="CARTE_BANCAIRE" size={22} />
-                    <div className="text-start">
-                      <div className="fw-bold">Carte bancaire</div>
-                      <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Paiement en ligne via Stripe</div>
-                    </div>
-                  </button>
-                )}
-
                 {/* Manual methods */}
                 <div className="row g-2">
                   {METHODES_MANUELLES.map(m => (
@@ -416,16 +397,6 @@ export default function FacturesPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* ── Step 2a: Stripe card modal ──────────────────────────────────── */}
-      {showStripeModal && selectedFacture && (
-        <StripePaymentModal
-          facture={selectedFacture}
-          montant={paiementForm.montant}
-          onSuccess={() => { setShowStripeModal(false); load(); }}
-          onClose={() => setShowStripeModal(false)}
-        />
       )}
 
       {/* ── Step 2b: Manual payment modal ──────────────────────────────── */}
