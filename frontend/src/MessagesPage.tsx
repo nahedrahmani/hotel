@@ -1,68 +1,68 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Plus, MessageSquare, X } from 'lucide-react';
-import { Client, type IMessage } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
-import { http } from './services/http';
-import keycloak from './config/keycloak';
+import { Send, MessageSquare, ConciergeBell } from 'lucide-react';
+import { http, API_BASE } from './services/http';
+import { isStaff } from './config/access';
+import { apiError } from './utils/api';
 
-// ── Types matching backend entities ──────────────────────────────────────────
-
-type MessageType = 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO';
-type MessageState = 'SENT' | 'SEEN';
+// ── Types matching the chambre-service API ───────────────────────────────────
 
 type ChatMessage = {
   id: number;
   content: string;
-  state: MessageState;
-  type: MessageType;
+  state: 'SENT' | 'SEEN';
   senderId: string;
   receiverId: string;
-  mediaFilePath?: string;
   createdDate: string;
 };
 
-type Chat = {
-  id: string;           // UUID
-  senderId: string;
-  recipientId: string;
+type Conversation = {
+  id: string;
+  guestId: string;
+  guestName?: string;
   lastMessage?: string;
-  lastMessageTime?: string;
-  createdDate: string;
+  lastMessageAt?: string;
+  unread: number;
 };
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const GATEWAY = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
-const WS_URL  = `${GATEWAY}/ws-chat`;   // routed through gateway → chambre-service
+const API = `${API_BASE}/api/chats`;
+const RECEPTION = 'reception';
+/** New messages show up within this delay; simpler and safer than an open socket. */
+const POLL_MS = 5000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-
-/** Deterministic hue from a string so every user has a consistent colour */
 const hashHue = (s: string) =>
   Math.abs(s.split('').reduce((a, c) => (a << 5) - a + c.charCodeAt(0), 0)) % 360;
 
-const Avatar: React.FC<{ id: string; size?: number }> = ({ id, size = 40 }) => (
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+
+const Avatar: React.FC<{ seed: string; label: string; size?: number }> = ({ seed, label, size = 40 }) => (
   <div
-    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-    style={{
-      width: size, height: size,
-      background: `hsl(${hashHue(id)}, 55%, 42%)`,
-      fontSize: size * 0.36,
-    }}
+    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-semibold flex-shrink-0"
+    style={{ width: size, height: size, background: `hsl(${hashHue(seed)}, 40%, 40%)`, fontSize: size * 0.36 }}
   >
-    {id.slice(0, 2).toUpperCase()}
+    {initials(label)}
   </div>
 );
 
-const fmt = (d?: string) =>
+const ReceptionAvatar: React.FC<{ size?: number }> = ({ size = 40 }) => (
+  <div
+    className="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0"
+    style={{ width: size, height: size, background: 'var(--bs-dark)' }}
+  >
+    <ConciergeBell size={size * 0.45} />
+  </div>
+);
+
+const time = (d?: string) =>
   d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
 
-const fmtDate = (d?: string) => {
+const shortDate = (d?: string) => {
   if (!d) return '';
   const date = new Date(d);
   const today = new Date();
-  if (date.toDateString() === today.toDateString()) return fmt(d);
+  if (date.toDateString() === today.toDateString()) return time(d);
   const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
   if (date.toDateString() === yesterday.toDateString()) return 'Hier';
   return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
@@ -71,386 +71,294 @@ const fmtDate = (d?: string) => {
 const dayLabel = (d: string) =>
   new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-// ── Component ─────────────────────────────────────────────────────────────────
+const guestLabel = (c: Conversation) => c.guestName?.trim() || 'Client';
 
-export const MessagesPage: React.FC = () => {
-  const currentUserId: string = keycloak.tokenParsed?.sub ?? '';
+// ── Thread (shared by guest and staff views) ─────────────────────────────────
 
-  const [chats, setChats]               = useState<Chat[]>([]);
-  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
-  const [messages, setMessages]         = useState<ChatMessage[]>([]);
-  const [inputText, setInputText]       = useState('');
-  const [connected, setConnected]       = useState(false);
-  const [showNewChat, setShowNewChat]   = useState(false);
-  const [recipientId, setRecipientId]   = useState('');
-  const [creating, setCreating]         = useState(false);
-  const [createError, setCreateError]   = useState('');
+const Thread: React.FC<{
+  messages: ChatMessage[];
+  mySide: string;                       // guest id for a guest, "reception" for staff
+  otherName: string;
+  emptyHint: string;
+  onSend: (text: string) => Promise<void>;
+}> = ({ messages, mySide, otherName, emptyHint, onSend }) => {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const endRef = useRef<HTMLDivElement>(null);
 
-  const stompRef         = useRef<Client | null>(null);
-  const messagesEndRef   = useRef<HTMLDivElement>(null);
-  const selectedChatRef  = useRef<Chat | null>(null);
-  selectedChatRef.current = selectedChat;
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [messages.length]);
 
-  // ── Data fetching ──────────────────────────────────────────────────────────
+  const send = async () => {
+    const content = text.trim();
+    if (!content || sending) return;
+    setSending(true); setError('');
+    try { await onSend(content); setText(''); }
+    catch (e) { setError(apiError(e, "Le message n'a pas pu être envoyé.")); }
+    finally { setSending(false); }
+  };
 
-  const loadChats = useCallback(async () => {
-    if (!currentUserId) return;
-    try {
-      const res = await http.get<Chat[]>(`${GATEWAY}/api/chats/user/${currentUserId}`);
-      setChats(res.data);
-    } catch { /* silent — shown via connection status */ }
-  }, [currentUserId]);
+  return (
+    <>
+      <div className="flex-grow-1 overflow-auto px-4 py-3">
+        {messages.length === 0 && (
+          <div className="text-center text-muted small py-5">{emptyHint}</div>
+        )}
+        {messages.map((msg, idx) => {
+          const mine = msg.senderId === mySide;
+          const prev = messages[idx - 1];
+          const newDay = !prev || new Date(prev.createdDate).toDateString() !== new Date(msg.createdDate).toDateString();
+          return (
+            <React.Fragment key={msg.id}>
+              {newDay && (
+                <div className="text-center my-3">
+                  <small className="text-muted px-3 py-1 rounded-pill border bg-white" style={{ fontSize: '0.7rem' }}>
+                    {dayLabel(msg.createdDate)}
+                  </small>
+                </div>
+              )}
+              <div className={`d-flex mb-2 ${mine ? 'justify-content-end' : 'justify-content-start'}`}>
+                <div
+                  className={`rounded-3 px-3 py-2 ${mine ? 'bg-dark text-white ms-5' : 'bg-white text-dark me-5 border'}`}
+                  style={{ maxWidth: '65%', wordBreak: 'break-word' }}
+                >
+                  {!mine && <div className="fw-semibold mb-1" style={{ fontSize: '0.72rem' }}>{otherName}</div>}
+                  <span style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem' }}>{msg.content}</span>
+                  <div className={`text-end mt-1 ${mine ? 'text-white-50' : 'text-muted'}`} style={{ fontSize: '0.65rem' }}>
+                    {time(msg.createdDate)}
+                    {mine && <span className="ms-1">{msg.state === 'SEEN' ? '· Lu' : '· Envoyé'}</span>}
+                  </div>
+                </div>
+              </div>
+            </React.Fragment>
+          );
+        })}
+        <div ref={endRef} />
+      </div>
 
-  const loadMessages = useCallback(async (chatId: string) => {
-    try {
-      const res = await http.get<ChatMessage[]>(`${GATEWAY}/api/chats/${chatId}/messages`);
-      setMessages([...res.data].reverse()); // API returns DESC; display ASC
-    } catch { /* silent */ }
+      <div className="bg-white border-top px-4 py-3 flex-shrink-0">
+        {error && <div className="text-danger small mb-2">{error}</div>}
+        <div className="d-flex align-items-end gap-2">
+          <textarea
+            className="form-control bg-light rounded-3"
+            rows={2}
+            maxLength={2000}
+            placeholder="Écrire un message… (Entrée pour envoyer, Maj+Entrée pour un retour à la ligne)"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            style={{ resize: 'none' }}
+          />
+          <button
+            className="btn btn-dark d-flex align-items-center gap-2 flex-shrink-0"
+            onClick={send}
+            disabled={!text.trim() || sending}
+          >
+            {sending ? <span className="spinner-border spinner-border-sm" /> : <Send size={15} />}
+            Envoyer
+          </button>
+        </div>
+      </div>
+    </>
+  );
+};
+
+// ── Shared loading of one conversation's messages ─────────────────────────────
+
+function useThread(chatId: string | null) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  const load = useCallback(async () => {
+    if (!chatId) { setMessages([]); return; }
+    const res = await http.get<ChatMessage[]>(`${API}/${chatId}/messages`);
+    setMessages([...res.data].reverse()); // API returns newest first
+    // Reading the thread marks what was received as seen
+    if (res.data.some(m => m.state !== 'SEEN')) http.put(`${API}/${chatId}/read`).catch(() => {});
+  }, [chatId]);
+
+  useEffect(() => { setMessages([]); load().catch(() => {}); }, [load]);
+  return { messages, reload: load };
+}
+
+function usePolling(fn: () => Promise<unknown>) {
+  useEffect(() => {
+    const id = setInterval(() => { if (!document.hidden) fn().catch(() => {}); }, POLL_MS);
+    return () => clearInterval(id);
+  }, [fn]);
+}
+
+// ── Guest view: one conversation with the reception ──────────────────────────
+
+const GuestMessages: React.FC = () => {
+  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const { messages, reload } = useThread(conversation?.id ?? null);
+
+  const loadConversation = useCallback(async () => {
+    const res = await http.get<Conversation | ''>(`${API}/mine`);
+    setConversation(res.status === 204 || !res.data ? null : res.data);
   }, []);
 
-  // ── WebSocket ──────────────────────────────────────────────────────────────
-
   useEffect(() => {
-    if (!currentUserId) return;
+    loadConversation()
+      .catch(e => setError(apiError(e, 'Impossible de charger vos messages.')))
+      .finally(() => setLoading(false));
+  }, [loadConversation]);
 
-    const client = new Client({
-      webSocketFactory: () => new SockJS(WS_URL),
-      reconnectDelay: 5000,
-      onConnect: () => {
-        setConnected(true);
+  const poll = useCallback(async () => { if (conversation) await reload(); else await loadConversation(); },
+    [conversation, reload, loadConversation]);
+  usePolling(poll);
 
-        client.subscribe(`/topic/messages/${currentUserId}`, (frame: IMessage) => {
-          const msg: ChatMessage = JSON.parse(frame.body);
-          const selected = selectedChatRef.current;
-
-          if (selected) {
-            const other = selected.senderId === currentUserId
-              ? selected.recipientId : selected.senderId;
-            const belongsHere =
-              (msg.senderId === currentUserId && msg.receiverId === other) ||
-              (msg.senderId === other          && msg.receiverId === currentUserId);
-
-            if (belongsHere) {
-              setMessages(prev => {
-                // Deduplicate by id (optimistic sends can arrive twice)
-                if (prev.some(m => m.id === msg.id)) return prev;
-                return [...prev, msg];
-              });
-            }
-          }
-
-          // Refresh chat list to update lastMessage / unread indicators
-          loadChats();
-        });
-      },
-      onDisconnect: () => setConnected(false),
-    });
-
-    client.activate();
-    stompRef.current = client;
-
-    return () => { client.deactivate(); };
-  }, [currentUserId, loadChats]);
-
-  // ── Side effects ───────────────────────────────────────────────────────────
-
-  useEffect(() => { loadChats(); }, [loadChats]);
-
-  useEffect(() => {
-    if (selectedChat) { setMessages([]); loadMessages(selectedChat.id); }
-    else setMessages([]);
-  }, [selectedChat, loadMessages]);
-
-  // Auto-scroll to newest message
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // ── Actions ────────────────────────────────────────────────────────────────
-
-  const otherUser = (chat: Chat) =>
-    chat.senderId === currentUserId ? chat.recipientId : chat.senderId;
-
-  const sendMessage = () => {
-    if (!inputText.trim() || !selectedChat || !stompRef.current?.connected) return;
-    stompRef.current.publish({
-      destination: '/app/chat',
-      body: JSON.stringify({
-        chatId:     selectedChat.id,
-        senderId:   currentUserId,
-        receiverId: otherUser(selectedChat),
-        content:    inputText.trim(),
-        type:       'TEXT',
-      }),
-    });
-    setInputText('');
+  const send = async (content: string) => {
+    await http.post(`${API}/messages`, conversation ? { chatId: conversation.id, content } : { content });
+    if (conversation) await reload(); else await loadConversation();
   };
 
-  const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-  };
-
-  const startChat = async () => {
-    const target = recipientId.trim();
-    if (!target || !currentUserId) return;
-    if (target === currentUserId) { setCreateError('Vous ne pouvez pas vous écrire à vous-même.'); return; }
-
-    setCreating(true); setCreateError('');
-    try {
-      const res = await http.post<Chat>(
-        `${GATEWAY}/api/chats/create?senderId=${encodeURIComponent(currentUserId)}&recipientId=${encodeURIComponent(target)}`,
-        null,
-      );
-      setChats(prev => prev.find(c => c.id === res.data.id) ? prev : [res.data, ...prev]);
-      setSelectedChat(res.data);
-      setShowNewChat(false);
-      setRecipientId('');
-    } catch {
-      setCreateError('Impossible de créer la conversation. Vérifiez l\'ID utilisateur.');
-    } finally { setCreating(false); }
-  };
-
-  // ── Guard ──────────────────────────────────────────────────────────────────
-
-  if (!currentUserId) {
-    return (
-      <div className="d-flex align-items-center justify-content-center" style={{ height: 'calc(100vh - 62px)' }}>
-        <p className="text-muted">Connectez-vous pour accéder aux messages.</p>
+  return (
+    <div className="container py-4" style={{ maxWidth: 860 }}>
+      <div className="mb-3">
+        <h2 className="h4 fw-bold mb-1">Messages</h2>
+        <p className="text-muted mb-0">
+          Une question sur votre séjour ? La réception vous répond ici, en général dans l'heure.
+        </p>
       </div>
-    );
-  }
+      {error && <div className="alert alert-danger">{error}</div>}
+      <div className="card border shadow-sm d-flex flex-column overflow-hidden" style={{ height: 'calc(100vh - 230px)', minHeight: 420 }}>
+        <div className="bg-white border-bottom px-4 py-3 d-flex align-items-center gap-3 flex-shrink-0">
+          <ReceptionAvatar />
+          <div>
+            <div className="fw-semibold">La réception</div>
+            <div className="text-muted small">Royal Tulip Korbous Bay · 24 h/24</div>
+          </div>
+        </div>
+        <div className="d-flex flex-column flex-grow-1 bg-light overflow-hidden">
+          {loading ? (
+            <div className="d-flex justify-content-center align-items-center flex-grow-1">
+              <span className="spinner-border spinner-border-sm text-secondary" />
+            </div>
+          ) : (
+            <Thread
+              messages={messages}
+              mySide={conversation?.guestId ?? '__me__'}
+              otherName="Réception"
+              emptyHint="Écrivez votre premier message : demande particulière, heure d'arrivée, transfert…"
+              onSend={send}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+// ── Staff view: the shared reception inbox ───────────────────────────────────
+
+const ReceptionInbox: React.FC = () => {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const { messages, reload } = useThread(selectedId);
+  const selected = conversations.find(c => c.id === selectedId) ?? null;
+
+  const loadInbox = useCallback(async () => {
+    const res = await http.get<Conversation[]>(`${API}/reception`);
+    setConversations(res.data);
+  }, []);
+
+  useEffect(() => {
+    loadInbox()
+      .catch(e => setError(apiError(e, 'Impossible de charger la boîte de réception.')))
+      .finally(() => setLoading(false));
+  }, [loadInbox]);
+
+  const poll = useCallback(async () => { await Promise.all([loadInbox(), selectedId ? reload() : null]); },
+    [loadInbox, reload, selectedId]);
+  usePolling(poll);
+
+  const open = (id: string) => {
+    setSelectedId(id);
+    // The unread badge clears as soon as the thread is opened
+    setConversations(prev => prev.map(c => (c.id === id ? { ...c, unread: 0 } : c)));
+  };
+
+  const send = async (content: string) => {
+    if (!selectedId) return;
+    await http.post(`${API}/messages`, { chatId: selectedId, content });
+    await Promise.all([reload(), loadInbox()]);
+  };
+
+  const totalUnread = conversations.reduce((n, c) => n + c.unread, 0);
 
   return (
     <div className="container-fluid p-0" style={{ height: 'calc(100vh - 62px)' }}>
       <div className="row g-0 h-100">
-
-        {/* ── Chat list ── */}
         <div className="col-lg-3 col-md-4 bg-white border-end d-flex flex-column h-100">
-
-          {/* Header */}
-          <div className="px-3 py-3 border-bottom d-flex justify-content-between align-items-center flex-shrink-0">
-            <div>
-              <h5 className="fw-bold mb-0">Messages</h5>
-              <span className="small text-muted">
-                {connected
-                  ? <span className="text-success">● En ligne</span>
-                  : <span className="text-secondary">○ Reconnexion…</span>}
-              </span>
-            </div>
-            <button
-              className="btn btn-outline-dark btn-sm rounded-circle"
-              style={{ width: 34, height: 34 }}
-              onClick={() => { setShowNewChat(true); setCreateError(''); setRecipientId(''); }}
-              title="Nouvelle conversation"
-            >
-              <Plus size={15} />
-            </button>
+          <div className="px-3 py-3 border-bottom flex-shrink-0">
+            <h2 className="h5 fw-bold mb-0">Messages clients</h2>
+            <span className="small text-muted">
+              Boîte de la réception{totalUnread > 0 && ` · ${totalUnread} non lu${totalUnread > 1 ? 's' : ''}`}
+            </span>
           </div>
-
-          {/* Chat list */}
+          {error && <div className="alert alert-danger m-3 small">{error}</div>}
           <div className="flex-grow-1 overflow-auto">
-            {chats.length === 0 ? (
+            {loading ? (
+              <div className="text-center p-4"><span className="spinner-border spinner-border-sm text-secondary" /></div>
+            ) : conversations.length === 0 ? (
               <div className="text-center text-muted p-5">
-                <MessageSquare size={36} className="mb-2 opacity-25" />
-                <p className="small mb-0">Aucune conversation</p>
-                <p className="small mb-0 opacity-75">Cliquez sur + pour commencer</p>
+                <MessageSquare size={32} className="mb-2 opacity-25" />
+                <p className="small mb-0">Aucun message de client pour l'instant.</p>
               </div>
-            ) : (
-              chats.map(chat => {
-                const other = otherUser(chat);
-                const active = selectedChat?.id === chat.id;
-                return (
-                  <div
-                    key={chat.id}
-                    className={`d-flex align-items-center gap-3 px-3 py-3 border-bottom ${active ? 'bg-light' : ''}`}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setSelectedChat(chat)}
-                  >
-                    <Avatar id={other} size={44} />
-                    <div className="flex-grow-1 overflow-hidden">
-                      <div className="d-flex justify-content-between align-items-baseline">
-                        <span className="fw-semibold text-dark small text-truncate" style={{ maxWidth: 130 }}>
-                          {other}
-                        </span>
-                        <span className="text-muted ms-1 flex-shrink-0" style={{ fontSize: '0.68rem' }}>
-                          {fmtDate(chat.lastMessageTime ?? chat.createdDate)}
-                        </span>
-                      </div>
-                      {chat.lastMessage && (
-                        <p className="text-muted mb-0 text-truncate" style={{ fontSize: '0.78rem' }}>
-                          {chat.lastMessage}
-                        </p>
-                      )}
-                    </div>
+            ) : conversations.map(c => (
+              <button
+                key={c.id}
+                type="button"
+                className={`d-flex align-items-center gap-3 px-3 py-3 border-0 border-bottom w-100 text-start ${c.id === selectedId ? 'bg-light' : 'bg-white'}`}
+                onClick={() => open(c.id)}
+              >
+                <Avatar seed={c.guestId} label={guestLabel(c)} size={42} />
+                <div className="flex-grow-1 overflow-hidden">
+                  <div className="d-flex justify-content-between align-items-baseline">
+                    <span className={`small text-truncate ${c.unread ? 'fw-bold' : 'fw-semibold'}`}>{guestLabel(c)}</span>
+                    <span className="text-muted ms-1 flex-shrink-0" style={{ fontSize: '0.7rem' }}>{shortDate(c.lastMessageAt)}</span>
                   </div>
-                );
-              })
-            )}
+                  <div className="d-flex justify-content-between align-items-center gap-2">
+                    <span className={`text-truncate ${c.unread ? 'text-dark' : 'text-muted'}`} style={{ fontSize: '0.8rem' }}>
+                      {c.lastMessage}
+                    </span>
+                    {c.unread > 0 && <span className="badge rounded-pill text-bg-dark flex-shrink-0">{c.unread}</span>}
+                  </div>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* ── Chat window ── */}
         <div className="col-lg-9 col-md-8 d-flex flex-column h-100 bg-light">
-          {!selectedChat ? (
-
-            /* Empty state */
+          {!selected ? (
             <div className="d-flex flex-column align-items-center justify-content-center h-100 text-muted">
-              <MessageSquare size={52} className="mb-3 opacity-20" />
+              <MessageSquare size={44} className="mb-3 opacity-25" />
               <p className="mb-1 fw-semibold">Sélectionnez une conversation</p>
-              <p className="small opacity-75">ou créez-en une nouvelle avec +</p>
+              <p className="small mb-0">Vos réponses sont signées « Réception ».</p>
             </div>
-
           ) : (<>
-
-            {/* Chat header */}
             <div className="bg-white border-bottom px-4 py-3 d-flex align-items-center gap-3 flex-shrink-0">
-              <Avatar id={otherUser(selectedChat)} size={40} />
-              <div>
-                <div className="fw-semibold">{otherUser(selectedChat)}</div>
-                {!connected && <div className="text-muted small">Reconnexion en cours…</div>}
-              </div>
+              <Avatar seed={selected.guestId} label={guestLabel(selected)} size={40} />
+              <div className="fw-semibold">{guestLabel(selected)}</div>
             </div>
-
-            {/* Messages */}
-            <div className="flex-grow-1 overflow-auto px-4 py-3">
-              {messages.map((msg, idx) => {
-                const mine = msg.senderId === currentUserId;
-                const prevMsg = messages[idx - 1];
-                const showDayBanner = idx === 0 ||
-                  new Date(prevMsg.createdDate).toDateString() !== new Date(msg.createdDate).toDateString();
-
-                return (
-                  <React.Fragment key={msg.id ?? idx}>
-                    {showDayBanner && (
-                      <div className="text-center my-3">
-                        <small
-                          className="text-muted px-3 py-1 rounded-pill border bg-white"
-                          style={{ fontSize: '0.7rem' }}
-                        >
-                          {dayLabel(msg.createdDate)}
-                        </small>
-                      </div>
-                    )}
-
-                    <div className={`d-flex mb-2 ${mine ? 'justify-content-end' : 'justify-content-start'}`}>
-                      {!mine && <Avatar id={msg.senderId} size={28} />}
-
-                      <div
-                        className={`rounded-3 px-3 py-2 ${mine ? 'bg-dark text-white ms-5' : 'bg-white text-dark ms-2 me-5'}`}
-                        style={{
-                          maxWidth: '65%',
-                          wordBreak: 'break-word',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
-                        }}
-                      >
-                        {msg.type === 'TEXT' ? (
-                          <span style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem' }}>{msg.content}</span>
-                        ) : msg.mediaFilePath ? (
-                          <a
-                            href={msg.mediaFilePath}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={mine ? 'text-white' : 'text-primary'}
-                          >
-                            📎 Pièce jointe
-                          </a>
-                        ) : (
-                          <span className="text-muted fst-italic small">Média non disponible</span>
-                        )}
-
-                        {/* Timestamp + read receipt */}
-                        <div
-                          className={`text-end mt-1 ${mine ? 'text-white opacity-50' : 'text-muted'}`}
-                          style={{ fontSize: '0.62rem' }}
-                        >
-                          {fmt(msg.createdDate)}
-                          {mine && (
-                            <span className="ms-1" title={msg.state === 'SEEN' ? 'Lu' : 'Envoyé'}>
-                              {msg.state === 'SEEN' ? '✓✓' : '✓'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </React.Fragment>
-                );
-              })}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Input */}
-            <div className="bg-white border-top px-4 py-3 flex-shrink-0">
-              <div className="d-flex align-items-end gap-2">
-                <textarea
-                  className="form-control border-0 bg-light rounded-3"
-                  rows={1}
-                  placeholder={connected ? 'Écrire un message… (Entrée pour envoyer)' : 'Connexion perdue…'}
-                  value={inputText}
-                  onChange={e => setInputText(e.target.value)}
-                  onKeyDown={handleKey}
-                  disabled={!connected}
-                  style={{ resize: 'none' }}
-                />
-                <button
-                  className="btn btn-dark rounded-circle flex-shrink-0"
-                  style={{ width: 42, height: 42 }}
-                  onClick={sendMessage}
-                  disabled={!inputText.trim() || !connected}
-                  title="Envoyer (Entrée)"
-                >
-                  <Send size={16} />
-                </button>
-              </div>
-            </div>
-
+            <Thread
+              messages={messages}
+              mySide={RECEPTION}
+              otherName={guestLabel(selected)}
+              emptyHint="Aucun message."
+              onSend={send}
+            />
           </>)}
         </div>
       </div>
-
-      {/* ── New chat modal ── */}
-      {showNewChat && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow rounded-4">
-              <div className="modal-header border-0 pb-0">
-                <h6 className="modal-title fw-bold">Nouvelle conversation</h6>
-                <button className="btn btn-sm btn-light rounded-circle" onClick={() => setShowNewChat(false)}>
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="modal-body">
-                <label className="form-label small fw-semibold text-muted">ID de l'utilisateur destinataire</label>
-                <input
-                  type="text"
-                  className={`form-control ${createError ? 'is-invalid' : ''}`}
-                  placeholder="Identifiant Keycloak (sub)"
-                  value={recipientId}
-                  onChange={e => { setRecipientId(e.target.value); setCreateError(''); }}
-                  onKeyDown={e => { if (e.key === 'Enter') startChat(); }}
-                  autoFocus
-                />
-                {createError && <div className="invalid-feedback">{createError}</div>}
-                <p className="text-muted small mt-2 mb-0">
-                  L'ID correspond au champ <code>sub</code> du token Keycloak de l'autre utilisateur.
-                </p>
-              </div>
-              <div className="modal-footer border-0 pt-0">
-                <button className="btn btn-light" onClick={() => setShowNewChat(false)}>Annuler</button>
-                <button
-                  className="btn btn-dark"
-                  onClick={startChat}
-                  disabled={!recipientId.trim() || creating}
-                >
-                  {creating && <span className="spinner-border spinner-border-sm me-2" />}
-                  Démarrer
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
+
+export const MessagesPage: React.FC = () => (isStaff() ? <ReceptionInbox /> : <GuestMessages />);

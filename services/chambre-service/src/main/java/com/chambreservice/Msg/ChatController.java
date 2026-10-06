@@ -1,113 +1,102 @@
 package com.chambreservice.Msg;
 
-
-import com.chambreservice.configuration.CloudinaryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Guest ↔ reception messaging. A guest has one conversation with the shared "reception"
+ * inbox; every staff member can read it and replies as the reception. The sender of a
+ * message is always taken from the token, never from the request.
+ */
 @RestController
 @RequestMapping("/api/chats")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "${app.cors.allowed-origins:http://localhost:5173}", allowCredentials = "true")
 public class ChatController {
 
+    private static final Set<String> STAFF = Set.of("ROLE_ADMIN", "ROLE_MANAGER", "ROLE_STAFF");
+
     private final ChatService chatService;
-    private final SimpMessagingTemplate messagingTemplate;
-    private final CloudinaryService cloudinaryService;
 
-    @MessageMapping("/chat")
-    public void sendMessage(@Payload MessageDto messageDto) {
-        if (messageDto.getChatId() == null || messageDto.getSenderId() == null || messageDto.getReceiverId() == null) {
-            return;
-        }
-
-        UUID chatId;
-        try {
-            chatId = UUID.fromString(messageDto.getChatId());
-        } catch (IllegalArgumentException e) {
-            return;
-        }
-
-        Message savedMessage = chatService.saveMessage(chatId, messageDto);
-
-        messagingTemplate.convertAndSend(
-                "/topic/messages/" + messageDto.getReceiverId(),
-                savedMessage
-        );
-
-        messagingTemplate.convertAndSend(
-                "/topic/messages/" + messageDto.getSenderId(),
-                savedMessage
-        );
+    private static boolean isStaff(Authentication auth) {
+        return auth.getAuthorities().stream().anyMatch(a -> STAFF.contains(a.getAuthority()));
     }
 
-    @GetMapping("/user/{userId}")
+    /** Staff inbox: every guest conversation with the reception, most recent first. */
+    @GetMapping("/reception")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    public List<ConversationDto> receptionInbox() {
+        return chatService.receptionConversations();
+    }
+
+    /** The calling guest's conversation with the reception (204 when they never wrote). */
+    @GetMapping("/mine")
     @PreAuthorize("isAuthenticated()")
-    public List<Chat> getUserChats(@PathVariable String userId,
-                                    @AuthenticationPrincipal Jwt jwt) {
-        String callerId = jwt.getSubject();
-        if (!callerId.equals(userId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
-        }
-        return chatService.getUserChats(userId);
+    public ResponseEntity<ConversationDto> mine(@AuthenticationPrincipal Jwt jwt) {
+        return chatService.guestConversation(jwt.getSubject())
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/{chatId}/messages")
     @PreAuthorize("isAuthenticated()")
-    public List<Message> getChatMessages(@PathVariable UUID chatId,
-                                          @AuthenticationPrincipal Jwt jwt) {
-        String callerId = jwt.getSubject();
-        List<Chat> callerChats = chatService.getUserChats(callerId);
-        boolean isParticipant = callerChats.stream()
-                .anyMatch(c -> c.getId().equals(chatId));
-        if (!isParticipant) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
-        }
-        return chatService.getChatMessages(chatId);
+    public List<Message> messages(@PathVariable UUID chatId, @AuthenticationPrincipal Jwt jwt, Authentication auth) {
+        return chatService.getChatMessages(requireAccess(chatId, jwt, auth).getId());
     }
 
-    @PostMapping("/create")
+    /**
+     * Sends a message. A guest writes in their own conversation (created on the first
+     * message); staff answer in a reception conversation as "reception".
+     */
+    @PostMapping("/messages")
     @PreAuthorize("isAuthenticated()")
-    public Chat createChat(@RequestParam String senderId,
-                            @RequestParam String recipientId,
-                            @AuthenticationPrincipal Jwt jwt) {
-        String callerId = jwt.getSubject();
-        if (!callerId.equals(senderId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+    @ResponseStatus(HttpStatus.CREATED)
+    public Message send(@RequestBody Map<String, String> body, @AuthenticationPrincipal Jwt jwt, Authentication auth) {
+        String content = body.getOrDefault("content", "").trim();
+        if (content.isEmpty() || content.length() > 2000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le message doit contenir entre 1 et 2000 caractères.");
         }
-        return chatService.getOrCreateChat(senderId, recipientId);
+        String chatId = body.get("chatId");
+        if (chatId == null) {
+            // A guest's first message opens their conversation with the reception
+            String name = jwt.getClaimAsString("name");
+            Chat chat = chatService.openGuestConversation(jwt.getSubject(), name != null ? name : jwt.getClaimAsString("preferred_username"));
+            return chatService.saveMessage(chat, jwt.getSubject(), ChatService.RECEPTION, content);
+        }
+        Chat chat = requireAccess(UUID.fromString(chatId), jwt, auth);
+        boolean asReception = !chat.getSenderId().equals(jwt.getSubject());
+        return asReception
+                ? chatService.saveMessage(chat, ChatService.RECEPTION, chat.getSenderId(), content)
+                : chatService.saveMessage(chat, jwt.getSubject(), ChatService.RECEPTION, content);
     }
 
-    @PutMapping("/messages/{messageId}/read")
+    /** Marks as seen the messages the caller's side received in this conversation. */
+    @PutMapping("/{chatId}/read")
     @PreAuthorize("isAuthenticated()")
-    public void markAsRead(@PathVariable Long messageId) {
-        chatService.markMessageAsRead(messageId);
+    public void markRead(@PathVariable UUID chatId, @AuthenticationPrincipal Jwt jwt, Authentication auth) {
+        Chat chat = requireAccess(chatId, jwt, auth);
+        String reader = chat.getSenderId().equals(jwt.getSubject()) ? jwt.getSubject() : ChatService.RECEPTION;
+        chatService.markReceivedAsSeen(chat.getId(), reader);
     }
 
-    @PostMapping("/upload-media")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Map<String, String>> uploadMedia(@RequestParam("file") MultipartFile file) {
-        if (file.isEmpty()) {
-            return ResponseEntity.badRequest().build();
-        }
-
-        String mediaUrl = cloudinaryService.uploadFile(file);
-
-        Map<String, String> response = Map.of("mediaFilePath", mediaUrl);
-        return ResponseEntity.ok(response);
+    /** The guest who owns the conversation, or any staff member for a reception conversation. */
+    private Chat requireAccess(UUID chatId, Jwt jwt, Authentication auth) {
+        Chat chat = chatService.findChat(chatId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation introuvable"));
+        boolean owner = chat.getSenderId().equals(jwt.getSubject());
+        boolean reception = ChatService.RECEPTION.equals(chat.getRecipientId()) && isStaff(auth);
+        if (!owner && !reception) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Accès refusé");
+        return chat;
     }
 }

@@ -64,10 +64,10 @@ const STAFF_GROUPS: NavGroup[] = [
   },
 ];
 
-// Messages stays out until guests can reach the reception without knowing a staff member's ID
 const GUEST_LINKS: NavItem[] = [
   { label: "Réserver",         to: "/dashboard/reserver" },
   { label: "Mes réservations", to: "/dashboard/mes-reservations" },
+  { label: "Messages",         to: "/dashboard/messages" },
 ];
 
 const ROLE_LABELS: Record<string, string> = { ADMIN: "Administrateur", MANAGER: "Manager", STAFF: "Personnel" };

@@ -32,6 +32,10 @@ public class Chat extends BaseAuditingEntity {
     @Column(name = "recipient_id", nullable = false)
     private String recipientId;
 
+    /** Guest's display name, kept for the reception inbox. */
+    @Column(name = "guest_name")
+    private String guestName;
+
     @OneToMany(mappedBy = "chat", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
     @OrderBy("createdDate DESC")
     private List<Message> messages;

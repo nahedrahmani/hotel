@@ -5,61 +5,69 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class ChatService {
 
+    /** Recipient id of the shared reception inbox, read by all staff. */
+    public static final String RECEPTION = "reception";
+
     private final ChatRepository chatRepository;
-    private final UserClient userClient;
     private final MessageRepository messageRepository;
 
-    public List<Chat> getUserChats(String userId) {
-        return chatRepository.findByUserId(userId);
+    public Optional<Chat> findChat(UUID chatId) {
+        return chatRepository.findById(chatId);
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
-    public Chat getOrCreateChat(String senderId, String recipientId) {
-        return chatRepository.findBySenderAndRecipient(senderId, recipientId)
-                .orElseGet(() -> {
-                    Chat chat = new Chat();
-                    chat.setSenderId(senderId);
-                    chat.setRecipientId(recipientId);
-                    return chatRepository.save(chat);
-                });
+    public Chat openGuestConversation(String guestId, String guestName) {
+        Chat chat = chatRepository.findBySenderAndRecipient(guestId, RECEPTION).orElseGet(() -> {
+            Chat c = new Chat();
+            c.setSenderId(guestId);
+            c.setRecipientId(RECEPTION);
+            return c;
+        });
+        // Keep the name current so the inbox shows what the guest is called today
+        chat.setGuestName(guestName);
+        return chatRepository.save(chat);
     }
 
-    public String getChatName(Chat chat, String currentUserId) {
-        try {
-            UserDto sender = userClient.getUserById(chat.getSenderId());
-            UserDto recipient = userClient.getUserById(chat.getRecipientId());
-
-            if (recipient.getId().equals(currentUserId)) {
-                return sender.getFirstName() + " " + sender.getLastName();
-            }
-            return recipient.getFirstName() + " " + recipient.getLastName();
-        } catch (Exception e) {
-            return chat.getSenderId().equals(currentUserId)
-                    ? chat.getRecipientId()
-                    : chat.getSenderId();
-        }
+    public Optional<ConversationDto> guestConversation(String guestId) {
+        return chatRepository.findBySenderAndRecipient(guestId, RECEPTION).map(c -> toConversation(c, guestId));
     }
 
-    public Message saveMessage(UUID chatId, MessageDto dto) {
-        Chat chat = chatRepository.findById(chatId)
-                .orElseThrow(() -> new RuntimeException("Chat not found"));
+    public List<ConversationDto> receptionConversations() {
+        return chatRepository.findByUserId(RECEPTION).stream()
+                .map(c -> toConversation(c, RECEPTION))
+                .sorted(Comparator.comparing(ConversationDto::lastMessageAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+    }
 
+    private ConversationDto toConversation(Chat chat, String reader) {
+        List<Message> messages = messageRepository.findByChatIdOrderByCreatedDateDesc(chat.getId());
+        Message last = messages.isEmpty() ? null : messages.get(0);
+        long unread = messages.stream()
+                .filter(m -> reader.equals(m.getReceiverId()) && m.getState() != MessageState.SEEN)
+                .count();
+        LocalDateTime at = last != null ? last.getCreatedDate() : chat.getCreatedDate();
+        return new ConversationDto(chat.getId(), chat.getSenderId(), chat.getGuestName(),
+                last != null ? last.getContent() : null, at, unread);
+    }
+
+    public Message saveMessage(Chat chat, String senderId, String receiverId, String content) {
         Message message = new Message();
         message.setChat(chat);
-        message.setSenderId(dto.getSenderId());
-        message.setReceiverId(dto.getReceiverId());
-        message.setContent(dto.getContent());
-        message.setType(dto.getType());
-        message.setMediaFilePath(dto.getMediaFilePath());
+        message.setSenderId(senderId);
+        message.setReceiverId(receiverId);
+        message.setContent(content);
+        message.setType(MessageType.TEXT);
         message.setState(MessageState.SENT);
-
         return messageRepository.save(message);
     }
 
@@ -67,10 +75,10 @@ public class ChatService {
         return messageRepository.findByChatIdOrderByCreatedDateDesc(chatId);
     }
 
-    public void markMessageAsRead(Long messageId) {
-        Message message = messageRepository.findById(messageId)
-                .orElseThrow(() -> new RuntimeException("Message not found"));
-        message.setState(MessageState.SEEN);
-        messageRepository.save(message);
+    @Transactional
+    public void markReceivedAsSeen(UUID chatId, String reader) {
+        messageRepository.findByChatIdOrderByCreatedDateDesc(chatId).stream()
+                .filter(m -> reader.equals(m.getReceiverId()) && m.getState() != MessageState.SEEN)
+                .forEach(m -> m.setState(MessageState.SEEN));
     }
 }

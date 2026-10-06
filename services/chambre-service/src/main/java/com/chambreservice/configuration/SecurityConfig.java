@@ -31,10 +31,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/chambre/**").permitAll()
                         .requestMatchers("/api/chambres/**").authenticated()
                         .requestMatchers("/api/chambre/**").authenticated()
-                        // Reclamation and chat REST require auth; WebSocket upgrade cannot carry Bearer headers
                         .requestMatchers("/api/reclamations/**").authenticated()
                         .requestMatchers("/api/chats/**").authenticated()
-                        .requestMatchers("/ws-chat/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2

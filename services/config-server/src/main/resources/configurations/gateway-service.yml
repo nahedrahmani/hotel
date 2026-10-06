@@ -22,11 +22,6 @@ spring:
           predicates:
             - Path=/api/chambres/**, /api/chambre/**, /api/reclamations/**, /api/chats/**
 
-        - id: chambre-service-ws
-          uri: lb:ws://chambre-service
-          predicates:
-            - Path=/ws-chat/**
-
         - id: client-service
           uri: lb://client-service
           predicates:
